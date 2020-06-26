@@ -3,7 +3,6 @@ from PIL import Image
 try:
     import apex
     from apex import amp
-    from apex.parallel import DistributedDataParallel
 except ModuleNotFoundError:
     pass
 import torch
@@ -14,24 +13,23 @@ from torchvision import datasets, transforms
 from torchvision.datasets import CIFAR10
 
 from advertorch.utils import NormalizeByChannelMeanStd
-from models import WideResNet
+from models.wrn import WideResNet
+from models.resnet import *
 
 
-###################################
-# Models                          #
-###################################
-def get_model(args, train=True, model_file=None):
-    mean = torch.tensor([0.4914, 0.4822, 0.4465], dtype=torch.float32).cuda()
-    std = torch.tensor([0.2023, 0.1994, 0.2010], dtype=torch.float32).cuda()
-    normalizer = NormalizeByChannelMeanStd(mean=mean, std=std)
-
+######################################
+# Set up model, optimizer, scheduler #
+######################################
+def setup(args, train=True, model_file=None):
+    # initialize model
     if args.arch.lower() == 'wideresnet':
         model = WideResNet(depth=args.depth, widen_factor=args.width)
+    elif args.arch.lower() == 'resnet':
+        assert args.depth in [18, 34, 50, 101, 152], 'Depth %d is not valid for ResNet...' % args.depth
+        model = eval('ResNet%d'%args.depth)
     else:
         raise ValueError('Architecture [%s] is not supported yet...' % args.arch)
-    model = ModelWrapper(model, normalizer)
-    model = nn.DataParallel(model)
-
+    
     if model_file:
         ckpt = torch.load(model_file)
         model.load_state_dict(ckpt['model_state_dict'])
@@ -40,163 +38,50 @@ def get_model(args, train=True, model_file=None):
     else:
         model.eval()
     model = model.cuda()
-    return model
-
-
-def get_model_opt_sch_apex(args):
+    
+    # set up the normalizer
     mean = torch.tensor([0.4914, 0.4822, 0.4465], dtype=torch.float32)
     std = torch.tensor([0.2023, 0.1994, 0.2010], dtype=torch.float32)
-    normalizer = NormalizeByChannelMeanStd(mean=mean, std=std)
-
-    if args.arch.lower() == 'wideresnet':
-        model = WideResNet(depth=args.depth, widen_factor=args.width)
-    else:
-        raise ValueError('Architecture [%s] is not supported yet...' % args.arch)
-    model = ModelWrapper(model, normalizer)
-    model = model.cuda()
-
-    # optimizer and lr scheduler
-    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum,
-        weight_decay=args.weight_decay)
-
-    amp_args = dict(opt_level=args.opt_level, loss_scale=args.loss_scale, verbosity=False)
-    if args.opt_level == 'O2':
-        amp_args['master_weights'] = args.master_weights
-    model, optimizer = amp.initialize(model, optimizer, **amp_args)
-    if args.lr_sch == 'multistep':
-        scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=args.sch_intervals, gamma=args.lr_gamma)
-    elif args.lr_sch == 'cyclic':
-        scheduler = optim.lr_scheduler.CyclicLR(optimizer, base_lr=args.lr_min, max_lr=args.lr_max,
-            step_size_up=args.epochs//2, step_size_down=args.epochs-args.epochs//2)
-
-    model = nn.DataParallel(model) # Apex doesn't support DataParallel right now
-    # workaround provided by vadimkantorov in https://github.com/NVIDIA/apex/issues/227
-    """
-    model.forward = lambda *args, old_fwd = model.forward, \
-        input_caster = lambda tensor: tensor.to(apex.amp._amp_state.opt_properties.options['cast_model_type']), \
-        output_caster = lambda tensor: tensor.to(apex.amp._amp_state.opt_properties.options['cast_model_outputs'] \
-            if apex.amp._amp_state.opt_properties.options.get('cast_model_outputs') is not None else torch.float32), \
-        **kwargs: apex.amp._initialize.applier(old_fwd(*apex.amp._initialize.applier(args, input_caster), \
-            **apex.amp._initialize.applier(kwargs, input_caster)), output_caster)
-    """
-    
-    return model, optimizer, scheduler
-
-
-def get_model_opt_sch_apex_ddp(args):
-    mean = torch.tensor([0.4914, 0.4822, 0.4465], dtype=torch.float32)
-    std = torch.tensor([0.2023, 0.1994, 0.2010], dtype=torch.float32)
-    normalizer = NormalizeByChannelMeanStd(mean=mean, std=std)
-
-    if args.arch.lower() == 'wideresnet':
-        model = WideResNet(depth=args.depth, widen_factor=args.width)
-    else:
-        raise ValueError('Architecture [%s] is not supported yet...' % args.arch)
-    model = ModelWrapper(model, normalizer)
-    model = model.cuda()
-
-    # optimizer and lr scheduler
-    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum,
-        weight_decay=args.weight_decay)
-    if args.lr_sch == 'multistep':
-        scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=args.sch_intervals, gamma=args.lr_gamma)
-    elif args.lr_sch == 'cyclic':
-        scheduler = optim.lr_scheduler.CyclicLR(optimizer, base_lr=args.lr_min, max_lr=args.lr_max,
-            step_size_up=args.epochs//2, step_size_down=args.epochs-args.epochs//2)
-
-    amp_args = dict(opt_level=args.opt_level, loss_scale=args.loss_scale, verbosity=False)
-    if args.opt_level == 'O2':
-        amp_args['master_weights'] = args.master_weights
-    model, optimizer = amp.initialize(model, optimizer, **amp_args)
-
-    args.distributed = False
-    if 'WORLD_SIZE' in os.environ:
-        args.distributed = int(os.environ['WORLD_SIZE']) > 1
-
-    if args.distributed:
-        # FOR DISTRIBUTED:  Set the device according to local_rank.
-        torch.cuda.set_device(args.local_rank)
-
-        # FOR DISTRIBUTED:  Initialize the backend.  torch.distributed.launch will provide
-        # environment variables, and requires that you use init_method=`env://`.
-        torch.distributed.init_process_group(backend='nccl',
-                                            init_method='env://')
-
-    if args.distributed:
-        # FOR DISTRIBUTED:  After amp.initialize, wrap the model with
-        # apex.parallel.DistributedDataParallel.
-        model = DistributedDataParallel(model)
-        # torch.nn.parallel.DistributedDataParallel is also fine, with some added args:
-        # model = torch.nn.parallel.DistributedDataParallel(model,
-        #                                                   device_ids=[args.local_rank],
-        #                                                   output_device=args.local_rank)
-    
-    return model, optimizer, scheduler
-
-
-def get_model_opt_sch_apex_alt(args):
-    mean = torch.tensor([0.4914, 0.4822, 0.4465], dtype=torch.float32)
-    std = torch.tensor([0.2023, 0.1994, 0.2010], dtype=torch.float32)
-    normalizer = NormalizeByChannelMeanStd(mean=mean, std=std)
-
-    if args.arch.lower() == 'wideresnet':
-        model = WideResNet(depth=args.depth, widen_factor=args.width)
-    else:
-        raise ValueError('Architecture [%s] is not supported yet...' % args.arch)
-    
-    model = model.cuda()
-
-    device = next(model.parameters()).device
-    normalize = normalizer.to(device=device)
+    normalizer = NormalizeByChannelMeanStd(mean=mean, std=std).cuda()
 
     def prehook(module, input_):
         x = input_[0]
-        return normalize(x)
-
+        return normalizer(x)
     handle_pre = model.register_forward_pre_hook(prehook)
 
+    # set up optimizer and scheduler
+    model, optimizer, scheduler = get_optimizer_and_scheduler(args, model)
 
+    # nn.DataParallel
+    if torch.cuda.device_count() > 1:
+        assert args.opt_level in ['O0', 'O1'], "Haven't tested opt_level %s with nn.DataParallel..." % args.opt_level
+        model = nn.DataParallel(model)
+
+    return model, optimizer, scheduler
+
+
+def get_optimizer_and_scheduler(args, model):
     # optimizer and lr scheduler
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum,
         weight_decay=args.weight_decay)
-    if args.lr_sch == 'multistep':
-        scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=args.sch_intervals, gamma=args.lr_gamma)
-    elif args.lr_sch == 'cyclic':
-        scheduler = optim.lr_scheduler.CyclicLR(optimizer, base_lr=args.lr_min, max_lr=args.lr_max,
-            step_size_up=args.epochs//2, step_size_down=args.epochs-args.epochs//2)
 
     amp_args = dict(opt_level=args.opt_level, loss_scale=args.loss_scale, verbosity=False)
     if args.opt_level == 'O2':
         amp_args['master_weights'] = args.master_weights
     model, optimizer = amp.initialize(model, optimizer, **amp_args)
-    model = nn.DataParallel(model) # Apex doesn't support DataParallel right now
-    # workaround provided by vadimkantorov in https://github.com/NVIDIA/apex/issues/227
-    model.forward = lambda *args, old_fwd = model.forward, \
-        input_caster = lambda tensor: tensor.to(apex.amp._amp_state.opt_properties.options['cast_model_type']), \
-        output_caster = lambda tensor: tensor.to(apex.amp._amp_state.opt_properties.options['cast_model_outputs'] \
-            if apex.amp._amp_state.opt_properties.options.get('cast_model_outputs') is not None else torch.float32), \
-        **kwargs: apex.amp._initialize.applier(old_fwd(*apex.amp._initialize.applier(args, input_caster), \
-            **apex.amp._initialize.applier(kwargs, input_caster)), output_caster)
+    if args.lr_sch == 'multistep':
+        scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=args.sch_intervals, gamma=args.lr_gamma)
+    elif args.lr_sch == 'cyclic':
+        scheduler = optim.lr_scheduler.CyclicLR(optimizer, base_lr=args.lr_min, max_lr=args.lr_max,
+            step_size_up=args.epochs//2, step_size_down=args.epochs-args.epochs//2)
     
     return model, optimizer, scheduler
 
 
-
-class ModelWrapper(nn.Module):
-    def __init__(self, model, normalizer):
-        super(ModelWrapper, self).__init__()
-        self.model = model
-        self.normalizer = normalizer
-
-    def forward(self, x):
-        x = self.normalizer(x)
-        return self.model(x)
-
-
 ###################################
-# data loader                     #
+# Set up data loader              #
 ###################################
-def get_loaders(args):
+def get_train_loaders(args):
     kwargs = {'num_workers': 4,
               'batch_size': args.batch_size,
               'shuffle': True,
@@ -220,7 +105,7 @@ def get_loaders(args):
     return trainloader, testloader
 
 
-def get_testloader(args, batch_size=100, shuffle=False, subset_idx=None):
+def get_test_loader(args, batch_size=100, shuffle=False, subset_idx=None):
     kwargs = {'num_workers': 4,
               'batch_size': batch_size,
               'shuffle': shuffle,
@@ -238,20 +123,6 @@ def get_testloader(args, batch_size=100, shuffle=False, subset_idx=None):
                                 download=False)
     testloader = DataLoader(testset, **kwargs)
     return testloader
-
-
-###################################
-# optimizer and scheduler         #
-###################################
-def get_optimizer_and_scheduler(args, model):
-    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum,
-        weight_decay=args.weight_decay)
-    if args.lr_sch == 'multistep':
-        scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=args.sch_intervals, gamma=args.lr_gamma)
-    elif args.lr_sch == 'cyclic':
-        scheduler = optim.lr_scheduler.CyclicLR(optimizer, base_lr=args.lr_min, max_lr=args.lr_max,
-            step_size_up=args.epochs//2, step_size_down=args.epochs-args.epochs//2)
-    return optimizer, scheduler
 
 
 ###################################
