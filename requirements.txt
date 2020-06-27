@@ -1,0 +1,5 @@
+advertorch==0.2.3
+apex==0.1
+tensorboard==2.2.2
+torch==1.5.1+cu101
+torchvision==0.6.1+cu101
