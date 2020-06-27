@@ -1,11 +1,8 @@
 import os, random
 from PIL import Image
 from collections import OrderedDict
-try:
-    import apex
-    from apex import amp
-except ModuleNotFoundError:
-    pass
+
+from apex import amp
 import torch
 import torch.nn as nn
 import torch.optim as optim
