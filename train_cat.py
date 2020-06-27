@@ -1,4 +1,4 @@
-import os, json, argparse, hashlib, logging, random
+import os, json, argparse, logging, random
 from tqdm import tqdm
 import numpy as np
 
@@ -13,7 +13,7 @@ from torchvision import datasets, transforms
 
 import arguments
 import utils
-from attacks import Linf_PGD, Linf_PGD_for_CAT_minhao
+from attacks import Linf_PGD
 
 
 # https://arxiv.org/pdf/2002.06789.pdf
@@ -36,7 +36,8 @@ class CAT():
                            'steps': kwargs['steps'],
                            'is_targeted': False,
                            'rand_start': kwargs['rs'], # see the pseudo-code of CAT
-                           'criterion': self.criterion
+                           'criterion': self.criterion,
+                           'inner_max': kwargs['inner_max']
                           }
         self.fixed_alpha = kwargs['fixed_alpha']
         if not self.fixed_alpha:
@@ -51,6 +52,7 @@ class CAT():
         self.eps = torch.zeros((len(self.trainset))).cuda()
         self.save_eps = kwargs['save_eps']
         self.label_smoothing = kwargs['label_smoothing']
+        self.use_distance_for_eps = kwargs['use_distance_for_eps']
 
     def prepare_data(self, **kwargs):
         transform_train = transforms.Compose([
@@ -99,16 +101,13 @@ class CAT():
         self.model.train()
 
         losses = 0
-        #current_lr = self.scheduler.get_last_lr()[0]
-        #print(current_lr)
-        #exit()
         
         batch_iter = self.get_batch_iterator()
         for inputs, targets, idx in batch_iter:
             inputs, targets = inputs.cuda(), targets.cuda()
 
             # fetch eps for current batch of samples
-            eps_per_sample = self.eps[idx]
+            eps_per_sample = self.eps[idx].clone()
 
             # generate soft label
             if self.label_smoothing:
@@ -127,16 +126,27 @@ class CAT():
                 self.attack_cfg['alpha'] = self.adapt_alpha*eps_per_sample/self.attack_cfg['steps']
 
             # generate adversarial examples
-            adv_inputs = Linf_PGD_for_CAT_minhao(self.model, inputs, soft_targets if self.label_smoothing else targets, eps=eps_per_sample, **self.attack_cfg)
+            adv_return = Linf_PGD(self.model, self.optimizer, inputs, soft_targets if self.label_smoothing else targets, 
+                eps=eps_per_sample, **self.attack_cfg, return_mask=False if self.use_distance_for_eps else True)
+            
+            if isinstance(adv_return, tuple):
+                adv_inputs, correct_mask = adv_return
+            else:
+                adv_inputs = adv_return
 
-            # for those already successful adversarial examples
-            # do not increase eps
-            #outputs = self.model(adv_inputs)
-            #_, predicted = outputs.max(1)
-            #wrong_idx = ~(predicted.eq(targets))
-            #eps_per_sample[wrong_idx] -= self.eta
-            eps_per_sample = utils.Linf_distance(adv_inputs, inputs)
-
+            if self.attack_cfg['inner_max'] == 'cat_code':
+                if self.use_distance_for_eps:
+                    eps_per_sample = utils.Linf_distance(adv_inputs, inputs)
+                else:
+                    eps_per_sample[~correct_mask] -= self.eta
+            elif self.attack_cfg['inner_max'] == 'cat_paper':
+                # for those already successful adversarial examples
+                # do not increase eps
+                outputs = self.model(adv_inputs)
+                _, predicted = outputs.max(1)
+                wrong_idx = ~(predicted.eq(targets))
+                eps_per_sample[wrong_idx] -= self.eta
+            
             # make sure eps do not exceed max eps
             eps_per_sample = torch.clamp(eps_per_sample, 0., self.max_eps)
 
@@ -242,7 +252,7 @@ def get_args():
     arguments.model_args(parser)
     arguments.data_args(parser)
     arguments.base_train_args(parser)
-    arguments.cat_train_args(parser)
+    arguments.cat_args(parser)
     args = parser.parse_args()
     return args
 

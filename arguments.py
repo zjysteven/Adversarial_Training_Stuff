@@ -78,6 +78,10 @@ def madry_advt_args(parser):
 # https://arxiv.org/pdf/2002.06789.pdf
 def cat_args(parser):
     group = parser.add_argument_group('Adversarial_Training', 'Arguments to configure customized adversarial training')
+    group.add_argument('--inner-max', default='cat_code', type=str, choices=['cat_code', 'cat_paper'],
+                       help='specify a type of inner maximazation')
+    group.add_argument('--donot-use-distance-for-eps', action='store_false', dest='use_distance_for_eps',
+                       help='whether use |x_adv - x| as the updated eps')
     group.add_argument('--eps', default=8./255., type=float, 
                        help='perturbation budget for cutomized adversarial training')
     group.add_argument('--alpha', default=2./255., type=float, 
