@@ -1,6 +1,7 @@
 import os, json, argparse, logging, random
 from tqdm import tqdm
 import numpy as np
+from apex import amp
 
 import torch
 import torchvision
@@ -166,7 +167,8 @@ class CAT():
             losses += loss.item()
 
             self.optimizer.zero_grad()
-            loss.backward()
+            with amp.scale_loss(loss, self.optimizer) as scaled_loss:
+                scaled_loss.backward()
             self.optimizer.step()            
 
         self.scheduler.step()
@@ -253,6 +255,7 @@ def get_args():
     arguments.data_args(parser)
     arguments.base_train_args(parser)
     arguments.cat_args(parser)
+    arguments.amp_args(parser)
     args = parser.parse_args()
     return args
 
@@ -266,10 +269,14 @@ def main():
     assert torch.cuda.is_available()
 
     # set up writer, logger, and save directory for models
-    #filename = 'model'
-    save_root = os.path.join('checkpoints', 'cat_minhao', '{:s}{:d}-{:d}_seed_{:d}_epochs_{:d}_{:s}'.format(args.arch, args.depth, args.width, args.seed, args.epochs, args.lr_sch))
+    arch = '{:s}{:d}_{:d}'.format(args.arch, args.depth, args.seed)
+    save_root = os.path.join('checkpoints', arch, 'cat')
+    subfolder = 'epochs_{:d}_{:s}'.format(args.epochs, args.lr_sch)
     if args.lr_sch == 'cyclic':
         save_root += '_{:.1f}'.format(args.lr_max)
+    save_root += '_%s' % args.inner_max
+    if args.use_distance_for_eps:
+        save_root += '_dis4eps'
     if args.fixed_alpha:
         save_root += '_fixed_alpha_{:.5f}'.format(args.alpha)
     else:
@@ -278,6 +285,7 @@ def main():
         save_root += '_rs'
     if not args.label_smoothing:
         save_root += '_no_ls'
+    save_root += '_%s' % args.opt_level
     if not os.path.exists(save_root):
         os.makedirs(save_root)
     else:
@@ -298,24 +306,13 @@ def main():
     torch.manual_seed(args.seed)
     random.seed(args.seed)
 
-    # initialize models
-    model = utils.get_model(args, train=True)
+    # initialize model, optimizer, and scheduler
+    model, optimizer, scheduler = utils.setup(args, train=True)
 
-    # get optimizers and schedulers
-    optimizer, scheduler = utils.get_optimizer_and_scheduler(args, model)
-
-    # train the ensemble
+    # train the model
     trainer = CAT(model, optimizer, scheduler, writer, save_root, **vars(args))
     trainer.run()
 
 
 if __name__ == '__main__':
     main()
-
-
-
-
-
-
-
-
