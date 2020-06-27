@@ -1,7 +1,7 @@
 # MODEL OPTS
 def model_args(parser):
     group = parser.add_argument_group('Model', 'Arguments control Model')
-    group.add_argument('--arch', default='WideResNet', type=str, choices=['ResNet', 'WideResNet', 'VGG'], 
+    group.add_argument('--arch', default='WideResNet', type=str, choices=['ResNet', 'WideResNet'], 
                        help='model architecture')
     group.add_argument('--depth', default=34, type=int, 
                        help='depth of the model')
@@ -32,9 +32,9 @@ def base_train_args(parser):
     group.add_argument('--lr', default=0.1, type=float, 
                        help='learning rate')
     group.add_argument('--lr-min', default=0., type=float, 
-                       help='minimal learning rate')
+                       help='minimal learning rate for cyclic schedule')
     group.add_argument('--lr-max', default=0.2, type=float, 
-                       help='maximal learning rate')
+                       help='maximal learning rate for cyclic schedule')
     group.add_argument('--lr-sch', default='multistep', choices=['cyclic', 'multistep'],
                        help='learning rate schedule type')
     group.add_argument('--sch-intervals', default=[80,140,180], type=list,
@@ -45,14 +45,14 @@ def base_train_args(parser):
                        help='weight decay')
     group.add_argument('--momentum', default=0.9, type=float,
                        help='momentum for SGD')
-    group.add_argument('--dont-test-robust', action='store_false', dest='test_robust',
+    group.add_argument('--donot-test-robust', action='store_false', dest='test_robust',
                        help='whether test robust accuracy during the training')
 
 
-# APEX ARGS
+# AMP ARGS
 # adapted from https://github.com/locuslab/fast_adversarial/blob/master/CIFAR10/train_fgsm.py
-def apex_args(parser):
-    group = parser.add_argument_group('Apex', 'Arguments to configure Apex')
+def amp_args(parser):
+    group = parser.add_argument_group('AMP', 'Arguments to configure Automatic Mixed Precision training')
     group.add_argument('--opt-level', default='O2', type=str, choices=['O0', 'O1', 'O2'],
         help='O0 is FP32 training, O1 is Mixed Precision, and O2 is "Almost FP16" Mixed Precision')
     group.add_argument('--loss-scale', default='1.0', type=str, choices=['1.0', 'dynamic'],
@@ -61,25 +61,22 @@ def apex_args(parser):
         help='Maintain FP32 master weights to accompany any FP16 model weights, not applicable for O1 opt level')
 
 
-def apex_ddp_args(parser):
-    group = parser.add_argument_group('Apex', 'Arguments to configure Apex Distributed Data Parallel')
-    group.add_argument("--local_rank", default=0, type=int)
-
-
-# ADVERSARIAL TRAINING ARGS
-def adv_train_args(parser):
-    group = parser.add_argument_group('Adversarial_Training', 'Arguments to configure adversarial training')
+# MADRY ADVERSARIAL TRAINING ARGS
+def madry_advt_args(parser):
+    group = parser.add_argument_group('Madry Adversarial_Training', 'Arguments to configure Madry adversarial training')
     group.add_argument('--eps', default=8./255., type=float, 
                        help='perturbation budget for adversarial training')
     group.add_argument('--alpha', default=2./255., type=float, 
                        help='step size for adversarial training')
     group.add_argument('--steps', default=10, type=int, 
                        help='number of steps for adversarial training')
+    group.add_argument('--save-eps', action="store_true",
+                       help='whether save the epsilon value for each sample per epoch')
 
 
 # CUSTOMIZED ADVERSARIAL TRAINING ARGS
 # https://arxiv.org/pdf/2002.06789.pdf
-def cat_train_args(parser):
+def cat_args(parser):
     group = parser.add_argument_group('Adversarial_Training', 'Arguments to configure customized adversarial training')
     group.add_argument('--eps', default=8./255., type=float, 
                        help='perturbation budget for cutomized adversarial training')
@@ -99,13 +96,13 @@ def cat_train_args(parser):
                        help='weighting parameter for cutomized adversarial training')
     group.add_argument('--no-label-smoothing', action="store_false", dest="label_smoothing",
                        help='do not use label smoothing')
-    group.add_argument('--dont-save-eps', action="store_false", dest='save_eps',
+    group.add_argument('--donot-save-eps', action="store_false", dest='save_eps',
                        help='whether save the epsilon value for each sample per epoch')
 
 
 # FAST ADVERSARIAL TRAINING ARGS
 # https://openreview.net/pdf?id=BJx040EFvH
-def fast_adv_train_args(parser):
+def fast_advt_args(parser):
     group = parser.add_argument_group('Fast Adversarial_Training', 'Arguments to configure fast adversarial training')
     group.add_argument('--eps', default=8, type=int, 
                        help='perturbation budget for adversarial training')
@@ -127,7 +124,7 @@ def wbox_eval_args(parser):
     group.add_argument('--cw-conf', default=50., type=float,
                        help='confidence for cw loss function')
     group.add_argument('--early-stop', action="store_true", 
-                       help='whether jump over the following evaluation when the accuracy is alreday zero')
+                       help='whether jump over the following evaluation for larger epsilon when the accuracy is alreday zero')
     group.add_argument('--save-to-csv', action="store_true",
                        help='whether save the results to a csv file')
     group.add_argument('--overwrite', action="store_false", dest="append_out",

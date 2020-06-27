@@ -1,5 +1,6 @@
 import os, random
 from PIL import Image
+from collections import OrderedDict
 try:
     import apex
     from apex import amp
@@ -32,7 +33,15 @@ def setup(args, train=True, model_file=None):
     
     if model_file:
         ckpt = torch.load(model_file)
-        model.load_state_dict(ckpt['model_state_dict'])
+        state_dict = ckpt['model_state_dict']
+        try:
+            model.load_state_dict(state_dict)
+        except KeyError:
+            new_state_dict = OrderedDict()
+            for k, v in state_dict.items():
+                name = k[7:] # remove `module.`
+                new_state_dict[name] = v
+            model.load_state_dict(new_state_dict)
     if train:
         model.train()
     else:
