@@ -4,20 +4,24 @@ import torch.nn.functional as F
 from apex import amp
 
 
-def gradient_wrt_data(model, optimizer, inputs, targets, criterion):
+def gradient_wrt_data(model, inputs, targets, criterion, use_amp=False, optimizer=None):
     inputs.requires_grad = True
     outputs = model(inputs)
 
     loss = criterion(outputs, targets)
     model.zero_grad()
-    with amp.scale_loss(loss, optimizer) as scaled_loss:
-        scaled_loss.backward()
+
+    if use_amp:
+        with amp.scale_loss(loss, optimizer) as scaled_loss:
+            scaled_loss.backward()
+    else:
+        loss.backward()
 
     data_grad = inputs.grad.data
     return data_grad.clone().detach()
 
 
-def Linf_PGD(model, optimizer, dat, lbl, eps, alpha, steps, is_targeted=False, rand_start=True, criterion=nn.CrossEntropyLoss(), inner_max='madry', return_mask=False):
+def Linf_PGD(model, dat, lbl, eps, alpha, steps, is_targeted=False, rand_start=True, criterion=nn.CrossEntropyLoss(), inner_max='madry', return_mask=False, use_amp=False, optimizer=None):
     assert type(eps) == type(alpha), 'eps and alpha type should match'
     assert isinstance(eps, float) or isinstance(eps, torch.Tensor), 'eps type is not valid'
     
@@ -44,7 +48,7 @@ def Linf_PGD(model, optimizer, dat, lbl, eps, alpha, steps, is_targeted=False, r
     # iteratively perturb data
     for i in range(steps):
         # Calculate gradient w.r.t. data
-        grad = gradient_wrt_data(model, optimizer, x_adv, lbl, criterion)
+        grad = gradient_wrt_data(model, x_adv, lbl, criterion, use_amp, optimizer)
         with torch.no_grad():
             # Get the sign of the gradient
             sign_data_grad = grad.sign()

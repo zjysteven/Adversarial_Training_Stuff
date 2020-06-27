@@ -54,6 +54,7 @@ class CAT():
         self.save_eps = kwargs['save_eps']
         self.label_smoothing = kwargs['label_smoothing']
         self.use_distance_for_eps = kwargs['use_distance_for_eps']
+        self.use_amp = kwargs['amp']
 
     def prepare_data(self, **kwargs):
         transform_train = transforms.Compose([
@@ -127,8 +128,8 @@ class CAT():
                 self.attack_cfg['alpha'] = self.adapt_alpha*eps_per_sample/self.attack_cfg['steps']
 
             # generate adversarial examples
-            adv_return = Linf_PGD(self.model, self.optimizer, inputs, soft_targets if self.label_smoothing else targets, 
-                eps=eps_per_sample, **self.attack_cfg, return_mask=False if self.use_distance_for_eps else True)
+            adv_return = Linf_PGD(self.model, inputs, soft_targets if self.label_smoothing else targets, 
+                eps=eps_per_sample, **self.attack_cfg, return_mask=False if self.use_distance_for_eps else True, use_amp=self.use_amp, optimizer=self.optimizer)
             
             if isinstance(adv_return, tuple):
                 adv_inputs, correct_mask = adv_return
@@ -167,8 +168,11 @@ class CAT():
             losses += loss.item()
 
             self.optimizer.zero_grad()
-            with amp.scale_loss(loss, self.optimizer) as scaled_loss:
-                scaled_loss.backward()
+            if self.use_amp:
+                with amp.scale_loss(loss, self.optimizer) as scaled_loss:
+                    scaled_loss.backward()
+            else:
+                loss.backward()
             self.optimizer.step()            
 
         self.scheduler.step()
@@ -234,9 +238,13 @@ class CAT():
         tqdm.write(print_message)
 
     def save(self, epoch):
+        try:
+            state_dict = self.model.model.state_dict()
+        except AttributeError:
+            state_dict = self.model.module.model.state_dict()
         torch.save({
             'epoch': epoch,
-            'model_state_dict': self.model.state_dict(),
+            'model_state_dict': state_dict,
             'optimizer_state_dict': self.optimizer.state_dict(),
             'scheduler_state_dict': self.scheduler.state_dict(),
         }, os.path.join(self.save_path, 'model_'+str(epoch)+'.pth'))
@@ -271,21 +279,24 @@ def main():
     # set up writer, logger, and save directory for models
     arch = '{:s}{:d}_{:d}'.format(args.arch, args.depth, args.seed)
     save_root = os.path.join('checkpoints', arch, 'cat')
-    subfolder = 'epochs_{:d}_{:s}'.format(args.epochs, args.lr_sch)
+    subfolder = 'epochs_{:d}_batch_{:d}_lr_{:s}'.format(args.epochs, args.batch_size, args.lr_sch)
     if args.lr_sch == 'cyclic':
-        save_root += '_{:.1f}'.format(args.lr_max)
-    save_root += '_%s' % args.inner_max
-    if args.use_distance_for_eps:
-        save_root += '_dis4eps'
+        subfolder += '_{:.1f}'.format(args.lr_max)
+    subfolder += '_%s' % args.inner_max
+    if args.use_distance_for_eps and args.inner_max == 'cat_code':
+        subfolder += '_dis4eps'
     if args.fixed_alpha:
-        save_root += '_fixed_alpha_{:.5f}'.format(args.alpha)
+        subfolder += '_fixed_alpha_{:.5f}'.format(args.alpha)
     else:
-        save_root += '_adapt_alpha_{:.2f}x'.format(args.adapt_alpha)
+        subfolder += '_adapt_alpha_{:.2f}x'.format(args.adapt_alpha)
+    subfolder += '_steps_%d' % args.steps
     if args.rs:
-        save_root += '_rs'
+        subfolder += '_rs'
     if not args.label_smoothing:
-        save_root += '_no_ls'
-    save_root += '_%s' % args.opt_level
+        subfolder += '_no_ls'
+    if args.amp:
+        subfolder += '_%s' % args.opt_level
+    save_root = os.path.join(save_root, subfolder)
     if not os.path.exists(save_root):
         os.makedirs(save_root)
     else:

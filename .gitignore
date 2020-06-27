@@ -6,3 +6,4 @@ runs
 wbox_results
 models_from_robustness.py
 *.sh
+*.bundle

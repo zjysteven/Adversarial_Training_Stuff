@@ -47,6 +47,8 @@ def base_train_args(parser):
                        help='momentum for SGD')
     group.add_argument('--donot-test-robust', action='store_false', dest='test_robust',
                        help='whether test robust accuracy during the training')
+    group.add_argument('--amp', action='store_true',
+                       help='whether use automatic mixed precision from Apex')
 
 
 # AMP ARGS

@@ -10,10 +10,34 @@ from torch.utils.data import DataLoader, Subset
 from torchvision import datasets, transforms
 from torchvision.datasets import CIFAR10
 
-from advertorch.utils import NormalizeByChannelMeanStd
+#from advertorch.utils import NormalizeByChannelMeanStd
 from models.wrn import WideResNet
 from models.resnet import *
 
+
+class NormalizeByChannelMeanStd(nn.Module):
+    def __init__(self, mean, std):
+        super(NormalizeByChannelMeanStd, self).__init__()
+        if not isinstance(mean, torch.Tensor):
+            mean = torch.tensor(mean)
+        if not isinstance(std, torch.Tensor):
+            std = torch.tensor(std)
+        self.register_buffer("mean", mean)
+        self.register_buffer("std", std)
+
+    def forward(self, tensor):
+        return normalize_fn(tensor, self.mean, self.std)
+
+    def extra_repr(self):
+        return 'mean={}, std={}'.format(self.mean, self.std)
+
+
+def normalize_fn(tensor, mean, std):
+    """Differentiable version of torchvision.functional.normalize"""
+    # here we assume the color channel is in at dim=1
+    mean = mean[None, :, None, None]
+    std = std[None, :, None, None]
+    return tensor.sub(mean).div(std)
 
 ######################################
 # Set up model, optimizer, scheduler #
@@ -43,38 +67,35 @@ def setup(args, train=True, model_file=None):
         model.train()
     else:
         model.eval()
-    model = model.cuda()
-    
+
     # set up the normalizer
     mean = torch.tensor([0.4914, 0.4822, 0.4465], dtype=torch.float32)
     std = torch.tensor([0.2023, 0.1994, 0.2010], dtype=torch.float32)
-    normalizer = NormalizeByChannelMeanStd(mean=mean, std=std).cuda()
-
-    def prehook(module, input_):
-        x = input_[0]
-        return normalizer(x)
-    handle_pre = model.register_forward_pre_hook(prehook)
+    normalizer = NormalizeByChannelMeanStd(mean=mean, std=std)
+    model = ModelWrapper(model, normalizer).cuda()
 
     # set up optimizer and scheduler
     model, optimizer, scheduler = get_optimizer_and_scheduler(args, model)
 
     # nn.DataParallel
     if torch.cuda.device_count() > 1:
-        assert args.opt_level in ['O0', 'O1'], "Haven't tested opt_level %s with nn.DataParallel..." % args.opt_level
+        if args.amp:
+            assert args.opt_level == 'O1', "Haven't tested opt_level %s with nn.DataParallel..." % args.opt_level
         model = nn.DataParallel(model)
 
     return model, optimizer, scheduler
 
 
 def get_optimizer_and_scheduler(args, model):
-    # optimizer and lr scheduler
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum,
         weight_decay=args.weight_decay)
 
-    amp_args = dict(opt_level=args.opt_level, loss_scale=args.loss_scale, verbosity=False)
-    if args.opt_level == 'O2':
-        amp_args['master_weights'] = args.master_weights
-    model, optimizer = amp.initialize(model, optimizer, **amp_args)
+    if args.amp:
+        amp_args = dict(opt_level=args.opt_level, loss_scale=args.loss_scale, verbosity=False)
+        if args.opt_level == 'O2':
+            amp_args['master_weights'] = args.master_weights
+        model, optimizer = amp.initialize(model, optimizer, **amp_args)
+    
     if args.lr_sch == 'multistep':
         scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=args.sch_intervals, gamma=args.lr_gamma)
     elif args.lr_sch == 'cyclic':
@@ -82,6 +103,17 @@ def get_optimizer_and_scheduler(args, model):
             step_size_up=args.epochs//2, step_size_down=args.epochs-args.epochs//2)
     
     return model, optimizer, scheduler
+
+
+class ModelWrapper(nn.Module):
+    def __init__(self, model, normalizer):
+        super(ModelWrapper, self).__init__()
+        self.model = model
+        self.normalizer = normalizer
+
+    def forward(self, x):
+        x = self.normalizer(x)
+        return self.model(x)
 
 
 ###################################
