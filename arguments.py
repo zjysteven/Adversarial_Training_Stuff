@@ -104,6 +104,8 @@ def cat_args(parser):
                        help='do not use label smoothing')
     group.add_argument('--donot-save-eps', action="store_false", dest='save_eps',
                        help='whether save the epsilon value for each sample per epoch')
+    group.add_argument('--donot-save-loss', action="store_false", dest='save_loss',
+                       help='whether save the loss value for each sample per epoch')
 
 
 # FAST ADVERSARIAL TRAINING ARGS

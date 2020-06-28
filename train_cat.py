@@ -28,7 +28,7 @@ class CAT():
         self.writer = writer
         self.save_path = save_path
         
-        self.criterion = utils.CE_with_soft_label() if kwargs['label_smoothing'] else nn.CrossEntropyLoss()
+        self.criterion = 'utils.CE_with_soft_label' if kwargs['label_smoothing'] else 'nn.CrossEntropyLoss'
         self.num_classes = 10
         self.batch_size = kwargs['batch_size']
 
@@ -37,7 +37,7 @@ class CAT():
                            'steps': kwargs['steps'],
                            'is_targeted': False,
                            'rand_start': kwargs['rs'], # see the pseudo-code of CAT
-                           'criterion': self.criterion,
+                           'criterion': eval(self.criterion)(),
                            'inner_max': kwargs['inner_max']
                           }
         self.fixed_alpha = kwargs['fixed_alpha']
@@ -50,8 +50,10 @@ class CAT():
 
         self.test_robust = kwargs['test_robust']
         self.prepare_data(**kwargs)
-        self.eps = torch.zeros((len(self.trainset))).cuda()
+        self.eps = torch.zeros((len(self.trainset)))
+        self.loss = torch.zeros((len(self.trainset)))
         self.save_eps = kwargs['save_eps']
+        self.save_loss = kwargs['save_loss']
         self.label_smoothing = kwargs['label_smoothing']
         self.use_distance_for_eps = kwargs['use_distance_for_eps']
         self.use_amp = kwargs['amp']
@@ -109,7 +111,7 @@ class CAT():
             inputs, targets = inputs.cuda(), targets.cuda()
 
             # fetch eps for current batch of samples
-            eps_per_sample = self.eps[idx].clone()
+            eps_per_sample = self.eps[idx].clone().cuda()
 
             # generate soft label
             if self.label_smoothing:
@@ -153,7 +155,7 @@ class CAT():
             eps_per_sample = torch.clamp(eps_per_sample, 0., self.max_eps)
 
             # update eps
-            self.eps[idx] = eps_per_sample
+            self.eps[idx] = eps_per_sample.cpu()
 
             # generate soft label again
             if self.label_smoothing:
@@ -163,8 +165,12 @@ class CAT():
 
             # update parameters
             outputs = self.model(adv_inputs)
-            # use soft label
-            loss = self.criterion(outputs, soft_targets if self.label_smoothing else targets)
+            if self.save_loss:
+                loss = eval(self.criterion)(reduction='none')(outputs, soft_targets if self.label_smoothing else targets)
+                self.loss[idx] = loss.cpu()
+                loss = loss.mean()    
+            else:
+                loss = eval(self.criterion)(reduction='mean')(outputs, soft_targets if self.label_smoothing else targets)
             losses += loss.item()
 
             self.optimizer.zero_grad()
@@ -249,12 +255,17 @@ class CAT():
             'scheduler_state_dict': self.scheduler.state_dict(),
         }, os.path.join(self.save_path, 'model_'+str(epoch)+'.pth'))
         if self.save_eps:
-            to_save = self.eps.cpu().numpy()
+            to_save = self.eps.numpy()
             save_path = os.path.join(self.save_path, 'eps')
             if not os.path.exists(save_path):
                 os.makedirs(save_path)
             np.save(os.path.join(save_path, 'epoch_%d.npy'%epoch), to_save)
-
+        if self.save_loss:
+            to_save = self.loss.numpy()
+            save_path = os.path.join(self.save_path, 'loss')
+            if not os.path.exists(save_path):
+                os.makedirs(save_path)
+            np.save(os.path.join(save_path, 'epoch_%d.npy'%epoch), to_save)
 
 
 def get_args():
