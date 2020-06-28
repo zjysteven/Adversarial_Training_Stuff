@@ -48,7 +48,7 @@ def setup(args, train=True, model_file=None):
         model = WideResNet(depth=args.depth, widen_factor=args.width)
     elif args.arch.lower() == 'resnet':
         assert args.depth in [18, 34, 50, 101, 152], 'Depth %d is not valid for ResNet...' % args.depth
-        model = eval('ResNet%d'%args.depth)
+        model = eval('ResNet%d'%args.depth)()
     else:
         raise ValueError('Architecture [%s] is not supported yet...' % args.arch)
     
