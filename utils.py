@@ -10,34 +10,11 @@ from torch.utils.data import DataLoader, Subset
 from torchvision import datasets, transforms
 from torchvision.datasets import CIFAR10
 
-#from advertorch.utils import NormalizeByChannelMeanStd
+from advertorch.utils import NormalizeByChannelMeanStd
 from models.wrn import WideResNet
-from models.resnet import *
+import models.resnet_imagenet as resnet_imagenet
+import models.resnet_cifar as resnet_cifar
 
-
-class NormalizeByChannelMeanStd(nn.Module):
-    def __init__(self, mean, std):
-        super(NormalizeByChannelMeanStd, self).__init__()
-        if not isinstance(mean, torch.Tensor):
-            mean = torch.tensor(mean)
-        if not isinstance(std, torch.Tensor):
-            std = torch.tensor(std)
-        self.register_buffer("mean", mean)
-        self.register_buffer("std", std)
-
-    def forward(self, tensor):
-        return normalize_fn(tensor, self.mean, self.std)
-
-    def extra_repr(self):
-        return 'mean={}, std={}'.format(self.mean, self.std)
-
-
-def normalize_fn(tensor, mean, std):
-    """Differentiable version of torchvision.functional.normalize"""
-    # here we assume the color channel is in at dim=1
-    mean = mean[None, :, None, None]
-    std = std[None, :, None, None]
-    return tensor.sub(mean).div(std)
 
 ######################################
 # Set up model, optimizer, scheduler #
@@ -47,8 +24,12 @@ def setup(args, train=True, model_file=None):
     if args.arch.lower() == 'wideresnet':
         model = WideResNet(depth=args.depth, widen_factor=args.width)
     elif args.arch.lower() == 'resnet':
-        assert args.depth in [18, 34, 50, 101, 152], 'Depth %d is not valid for ResNet...' % args.depth
-        model = eval('ResNet%d'%args.depth)()
+        if args.depth in [18, 34, 50, 101, 152]:
+            model = resnet_imagenet.resnet(depth=args.depth)
+        elif args.depth in [20, 32]:
+            model = resnet_cifar.resnet(depth=args.depth)
+        else:
+            raise ValueError('Depth %d is not valid for ResNet...' % args.depth)
     else:
         raise ValueError('Architecture [%s] is not supported yet...' % args.arch)
     
