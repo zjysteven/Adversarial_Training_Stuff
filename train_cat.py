@@ -167,7 +167,7 @@ class CAT():
             outputs = self.model(adv_inputs)
             if self.save_loss:
                 loss = eval(self.criterion)(reduction='none')(outputs, soft_targets if self.label_smoothing else targets)
-                self.loss[idx] = loss.cpu()
+                self.loss[idx] = loss.detach().cpu()
                 loss = loss.mean()    
             else:
                 loss = eval(self.criterion)(reduction='mean')(outputs, soft_targets if self.label_smoothing else targets)
