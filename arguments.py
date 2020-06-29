@@ -1,7 +1,7 @@
 # MODEL OPTS
 def model_args(parser):
     group = parser.add_argument_group('Model', 'Arguments control Model')
-    group.add_argument('--arch', default='WideResNet', type=str,  
+    group.add_argument('--arch', default='wrn', type=str, choices=['wrn', 'resnet'],
                        help='model architecture')
     group.add_argument('--depth', default=34, type=int, 
                        help='depth of the model')

@@ -24,9 +24,9 @@ import models.resnet_cifar as resnet_cifar
 ######################################
 def setup(args, train=True, model_file=None):
     # initialize model
-    if args.arch.lower() == 'wideresnet':
+    if args.arch == 'wrn':
         model = WideResNet(depth=args.depth, widen_factor=args.width)
-    elif args.arch.lower() == 'resnet':
+    elif args.arch == 'resnet':
         if args.depth in [18, 34, 50, 101, 152]:
             model = resnet_imagenet.resnet(depth=args.depth)
         elif args.depth in [20, 32]:
