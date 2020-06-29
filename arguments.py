@@ -59,7 +59,7 @@ def base_train_args(parser):
 # adapted from https://github.com/locuslab/fast_adversarial/blob/master/CIFAR10/train_fgsm.py
 def amp_args(parser):
     group = parser.add_argument_group('AMP', 'Arguments to configure Automatic Mixed Precision training')
-    group.add_argument('--opt-level', default='O0', type=str, choices=['O0', 'O1', 'O2'],
+    group.add_argument('--opt-level', default='O1', type=str, choices=['O0', 'O1', 'O2'],
         help='O0 is FP32 training, O1 is Mixed Precision, and O2 is "Almost FP16" Mixed Precision')
     group.add_argument('--loss-scale', default='1.0', type=str, choices=['1.0', 'dynamic'],
         help='If loss_scale is "dynamic", adaptively adjust the loss scale over time')
