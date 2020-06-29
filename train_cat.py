@@ -1,7 +1,10 @@
 import os, json, argparse, logging, random
 from tqdm import tqdm
 import numpy as np
-from apex import amp
+try:
+    from apex import amp
+except ModuleNotFoundError:
+    pass
 
 import torch
 import torchvision
@@ -19,46 +22,47 @@ from attacks import Linf_PGD
 
 # https://arxiv.org/pdf/2002.06789.pdf
 class CAT():
-    def __init__(self, model, optimizer, scheduler, writer, save_path=None, **kwargs):
+    def __init__(self, args, model, optimizer, scheduler, writer, save_path=None, **kwargs):
         self.model = model
-        self.epochs = kwargs['epochs']
+        self.epochs = args.epochs
         self.optimizer = optimizer
         self.scheduler = scheduler
 
         self.writer = writer
         self.save_path = save_path
         
-        self.criterion = 'utils.CE_with_soft_label' if kwargs['label_smoothing'] else 'nn.CrossEntropyLoss'
+        self.criterion = 'utils.CE_with_soft_label' if args.label_smoothing else 'nn.CrossEntropyLoss'
         self.num_classes = 10
-        self.batch_size = kwargs['batch_size']
+        self.batch_size = args.batch_size
 
         # PGD configs
-        self.attack_cfg = {'alpha': kwargs['alpha'],
-                           'steps': kwargs['steps'],
+        self.attack_cfg = {'alpha': args.alpha,
+                           'steps': args.steps,
                            'is_targeted': False,
-                           'rand_start': kwargs['rs'], # see the pseudo-code of CAT
-                           'criterion': eval(self.criterion)(),
-                           'inner_max': kwargs['inner_max']
+                           'rand_start': args.rs, # see the pseudo-code of CAT
+                           'criterion': eval(self.criterion)(reduction='mean'),
+                           'inner_max': args.inner_max
                           }
-        self.fixed_alpha = kwargs['fixed_alpha']
+        self.fixed_alpha = args.fixed_alpha
         if not self.fixed_alpha:
-            self.adapt_alpha = kwargs['adapt_alpha']
-        self.max_eps = kwargs['eps']
-        self.eta = kwargs['eta']
-        self.c = kwargs['c']
+            self.adapt_alpha = args.adapt_alpha
+        self.max_eps = args.eps
+        self.eta = args.eta
+        self.c = args.c
         self.dirichlet = d.Dirichlet(torch.ones((self.num_classes)))
 
-        self.test_robust = kwargs['test_robust']
-        self.prepare_data(**kwargs)
+        self.test_robust = args.test_robust
+        self.prepare_data(args)
+
         self.eps = torch.zeros((len(self.trainset)))
         self.loss = torch.zeros((len(self.trainset)))
-        self.save_eps = kwargs['save_eps']
-        self.save_loss = kwargs['save_loss']
-        self.label_smoothing = kwargs['label_smoothing']
-        self.use_distance_for_eps = kwargs['use_distance_for_eps']
-        self.use_amp = kwargs['amp']
+        self.save_eps = args.save_eps
+        self.save_loss = args.save_loss
+        self.label_smoothing = args.label_smoothing']
+        self.use_distance_for_eps = args.use_distance_for_eps']
+        self.use_amp = args.amp
 
-    def prepare_data(self, **kwargs):
+    def prepare_data(self, args):
         transform_train = transforms.Compose([
             transforms.RandomCrop(32, padding=4),
             transforms.RandomHorizontalFlip(),
@@ -67,18 +71,18 @@ class CAT():
         transform_test = transforms.Compose([
             transforms.ToTensor(),
         ])
-        self.trainset = utils.CIFAR10_cat(root=kwargs['data_dir'], train=True,
+        self.trainset = utils.CIFAR10_with_idx(root=args.data_dir, train=True,
                                     transform=transform_train,
                                     download=True)
-        self.testset = datasets.CIFAR10(root=kwargs['data_dir'], train=False,
+        self.testset = datasets.CIFAR10(root=args.data_dir, train=False,
                                     transform=transform_test,
                                     download=True)
-        self.trainloader = DataLoader(self.trainset, num_workers=4, batch_size=kwargs['batch_size'], shuffle=True, pin_memory=True)
+        self.trainloader = DataLoader(self.trainset, num_workers=4, batch_size=args.batch_size, shuffle=True, pin_memory=True)
         self.testloader = DataLoader(self.testset, num_workers=4, batch_size=100, shuffle=False, pin_memory=True)
 
         if self.test_robust:
             subset_idx = random.sample(range(10000), 1000)
-            subset = Subset(datasets.CIFAR10(root=kwargs['data_dir'], train=False,
+            subset = Subset(datasets.CIFAR10(root=args.data_dir, train=False,
                                     transform=transform_test,
                                     download=True), subset_idx)
             self.rob_testloader = DataLoader(subset, num_workers=4, batch_size=100, shuffle=False, pin_memory=True)
@@ -103,7 +107,6 @@ class CAT():
 
     def train(self, epoch):
         self.model.train()
-
         losses = 0
         
         batch_iter = self.get_batch_iterator()
@@ -269,7 +272,7 @@ class CAT():
 
 
 def get_args():
-    parser = argparse.ArgumentParser(description='CIFAR10 Customized Adversarial Training of Ensemble', add_help=True)
+    parser = argparse.ArgumentParser(description='CIFAR10 Customized Adversarial Training', add_help=True)
     arguments.model_args(parser)
     arguments.data_args(parser)
     arguments.base_train_args(parser)
@@ -315,7 +318,6 @@ def main():
         print('* The checkpoint already exists *')
         print('*********************************')
 
-    #save_path = os.path.join(save_root, filename)
     writer = SummaryWriter(save_root.replace('checkpoints', 'runs'))
 
     # dump configurations for potential future references
@@ -332,7 +334,7 @@ def main():
     model, optimizer, scheduler = utils.setup(args, train=True)
 
     # train the model
-    trainer = CAT(model, optimizer, scheduler, writer, save_root, **vars(args))
+    trainer = CAT(args, model, optimizer, scheduler, writer, save_root)
     trainer.run()
 
 

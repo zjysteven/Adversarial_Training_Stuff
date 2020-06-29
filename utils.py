@@ -1,8 +1,11 @@
 import os, random
 from PIL import Image
 from collections import OrderedDict
+try:
+    from apex import amp
+except ModuleNotFoundError:
+    pass
 
-from apex import amp
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -147,11 +150,10 @@ def get_test_loader(args, batch_size=100, shuffle=False, subset_idx=None):
 ###################################
 # CAT related                     #
 ###################################
-class CIFAR10_cat(CIFAR10):
-    """Custom CIFAR10 dataset specifically for CAT"""
+class CIFAR10_with_idx(CIFAR10):
     def __init__(self, root, train=True, transform=None, target_transform=None,
                  download=False):
-        super(CIFAR10_cat, self).__init__(root, train=train, transform=transform,
+        super(CIFAR10_with_idx, self).__init__(root, train=train, transform=transform,
                                       target_transform=target_transform, download=download)
 
     def __getitem__(self, index):

@@ -1,7 +1,10 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from apex import amp
+try:
+    from apex import amp
+except ModuleNotFoundError:
+    pass
 
 
 def gradient_wrt_data(model, inputs, targets, criterion, use_amp=False, optimizer=None):

@@ -47,6 +47,10 @@ def base_train_args(parser):
                        help='momentum for SGD')
     group.add_argument('--donot-test-robust', action='store_false', dest='test_robust',
                        help='whether test robust accuracy during the training')
+    group.add_argument('--donot-save-eps', action="store_false", dest='save_eps',
+                       help='whether save the epsilon value for each sample per epoch')
+    group.add_argument('--donot-save-loss', action="store_false", dest='save_loss',
+                       help='whether save the loss value for each sample per epoch')
     group.add_argument('--amp', action='store_true',
                        help='whether use automatic mixed precision from Apex')
 
@@ -72,8 +76,7 @@ def madry_advt_args(parser):
                        help='step size for adversarial training')
     group.add_argument('--steps', default=10, type=int, 
                        help='number of steps for adversarial training')
-    group.add_argument('--save-eps', action="store_true",
-                       help='whether save the epsilon value for each sample per epoch')
+    
 
 
 # CUSTOMIZED ADVERSARIAL TRAINING ARGS
@@ -102,10 +105,6 @@ def cat_args(parser):
                        help='weighting parameter for cutomized adversarial training')
     group.add_argument('--no-label-smoothing', action="store_false", dest="label_smoothing",
                        help='do not use label smoothing')
-    group.add_argument('--donot-save-eps', action="store_false", dest='save_eps',
-                       help='whether save the epsilon value for each sample per epoch')
-    group.add_argument('--donot-save-loss', action="store_false", dest='save_loss',
-                       help='whether save the loss value for each sample per epoch')
 
 
 # FAST ADVERSARIAL TRAINING ARGS
