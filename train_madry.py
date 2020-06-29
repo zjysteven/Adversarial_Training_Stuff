@@ -46,7 +46,7 @@ class Madry():
         self.save_loss = args.save_loss
         self.use_amp = args.amp
 
-    def prepare_data(self, **kwargs):
+    def prepare_data(self, args):
         transform_train = transforms.Compose([
             transforms.RandomCrop(32, padding=4),
             transforms.RandomHorizontalFlip(),
