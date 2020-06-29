@@ -58,8 +58,8 @@ class CAT():
         self.loss = torch.zeros((len(self.trainset)))
         self.save_eps = args.save_eps
         self.save_loss = args.save_loss
-        self.label_smoothing = args.label_smoothing']
-        self.use_distance_for_eps = args.use_distance_for_eps']
+        self.label_smoothing = args.label_smoothing
+        self.use_distance_for_eps = args.use_distance_for_eps
         self.use_amp = args.amp
 
     def prepare_data(self, args):
