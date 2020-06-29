@@ -206,7 +206,7 @@ def get_args():
     arguments.data_args(parser)
     arguments.base_train_args(parser)
     arguments.madry_advt_args(parser)
-    arguments.amp_args(parset)
+    arguments.amp_args(parser)
     args = parser.parse_args()
     return args
 
