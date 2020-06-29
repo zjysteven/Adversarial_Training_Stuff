@@ -211,7 +211,7 @@ class Fast():
 
 
 def get_args():
-    parser = argparse.ArgumentParser(description='CIFAR10 Adversarial Training of Ensemble', add_help=True)
+    parser = argparse.ArgumentParser(description='CIFAR10 Fast Adversarial Training of Ensemble', add_help=True)
     arguments.model_args(parser)
     arguments.data_args(parser)
     arguments.base_train_args(parser)
@@ -231,7 +231,7 @@ def main():
 
     # set up writer, logger, and save directory for models
     arch = '{:s}{:d}_{:d}'.format(args.arch, args.depth, args.seed)
-    save_root = os.path.join('checkpoints', arch, 'madry')
+    save_root = os.path.join('checkpoints', arch, 'fast')
     subfolder = 'epochs_{:d}_batch_{:d}_lr_{:s}'.format(args.epochs, args.batch_size, args.lr_sch)
     if args.lr_sch == 'cyclic':
         subfolder += '_{:.1f}'.format(args.lr_max)
