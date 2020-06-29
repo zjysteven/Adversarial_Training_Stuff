@@ -36,7 +36,7 @@ class CAT():
         self.batch_size = args.batch_size
 
         # PGD configs
-        self.attack_cfg = {'alpha': args.alpha,
+        self.attack_cfg = {'alpha': args.alpha/255.,
                            'steps': args.steps,
                            'is_targeted': False,
                            'rand_start': args.rs, # see the pseudo-code of CAT
@@ -46,7 +46,7 @@ class CAT():
         self.fixed_alpha = args.fixed_alpha
         if not self.fixed_alpha:
             self.adapt_alpha = args.adapt_alpha
-        self.max_eps = args.eps
+        self.max_eps = args.eps/255.
         self.eta = args.eta
         self.c = args.c
         self.dirichlet = d.Dirichlet(torch.ones((self.num_classes)))
@@ -267,7 +267,7 @@ class CAT():
             if not os.path.exists(save_path):
                 os.makedirs(save_path)
             np.save(os.path.join(save_path, 'epoch_%d.npy'%epoch), to_save)
-            
+
         if self.save_loss:
             to_save = self.loss.numpy()
             save_path = os.path.join(self.save_path, 'loss')
@@ -305,7 +305,7 @@ def main():
     if args.use_distance_for_eps and args.inner_max == 'cat_code':
         subfolder += '_dis4eps'
     if args.fixed_alpha:
-        subfolder += '_fixed_alpha_{:.5f}'.format(args.alpha)
+        subfolder += '_fixed_alpha_{:d}'.format(args.alpha)
     else:
         subfolder += '_adapt_alpha_{:.2f}x'.format(args.adapt_alpha)
     subfolder += '_steps_%d' % args.steps

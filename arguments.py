@@ -70,9 +70,9 @@ def amp_args(parser):
 # MADRY ADVERSARIAL TRAINING ARGS
 def madry_advt_args(parser):
     group = parser.add_argument_group('Madry Adversarial_Training', 'Arguments to configure Madry adversarial training')
-    group.add_argument('--eps', default=8./255., type=float, 
+    group.add_argument('--eps', default=8, type=int, 
                        help='perturbation budget for adversarial training')
-    group.add_argument('--alpha', default=2./255., type=float, 
+    group.add_argument('--alpha', default=2, type=int, 
                        help='step size for adversarial training')
     group.add_argument('--steps', default=10, type=int, 
                        help='number of steps for adversarial training')
@@ -87,9 +87,9 @@ def cat_args(parser):
                        help='specify a type of inner maximazation')
     group.add_argument('--donot-use-distance-for-eps', action='store_false', dest='use_distance_for_eps',
                        help='whether use |x_adv - x| as the updated eps')
-    group.add_argument('--eps', default=8./255., type=float, 
+    group.add_argument('--eps', default=8, type=int, 
                        help='perturbation budget for cutomized adversarial training')
-    group.add_argument('--alpha', default=2./255., type=float, 
+    group.add_argument('--alpha', default=2, type=int, 
                        help='step size for cutomized adversarial training')
     group.add_argument('--fixed-alpha', action='store_true',
                        help='whether use fixed step size for cutomized adversarial training')

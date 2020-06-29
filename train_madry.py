@@ -31,8 +31,8 @@ class Madry():
         self.criterion = nn.CrossEntropyLoss(reduction='none')
 
         # PGD configs
-        self.attack_cfg = {'eps': args.eps, 
-                           'alpha': args.alpha,
+        self.attack_cfg = {'eps': args.eps/255., 
+                           'alpha': args.alpha/255.,
                            'steps': args.steps,
                            'is_targeted': False,
                            'rand_start': True,
@@ -232,6 +232,7 @@ def main():
     subfolder = 'epochs_{:d}_batch_{:d}_lr_{:s}'.format(args.epochs, args.batch_size, args.lr_sch)
     if args.lr_sch == 'cyclic':
         subfolder += '_{:.1f}'.format(args.lr_max)
+    subfolder += '_alpha_%d_steps_%d' % (args.alpha, args.steps)
     if args.amp:
         subfolder += '_%s' % args.opt_level
     save_root = os.path.join(save_root, subfolder)
