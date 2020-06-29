@@ -182,18 +182,23 @@ class Madry():
             state_dict = self.model.model.state_dict()
         except AttributeError:
             state_dict = self.model.module.model.state_dict()
+        save_path = os.path.join(self.save_path, 'state_dicts')
+        if not os.path.exists(save_path):
+            os.makedirs(save_path)
         torch.save({
             'epoch': epoch,
             'model_state_dict': state_dict,
             'optimizer_state_dict': self.optimizer.state_dict(),
             'scheduler_state_dict': self.scheduler.state_dict(),
-        }, os.path.join(self.save_path, 'model_'+str(epoch)+'.pth'))
+        }, os.path.join(save_path, 'model_'+str(epoch)+'.pth'))
+
         if self.save_eps:
             to_save = self.eps.numpy()
             save_path = os.path.join(self.save_path, 'eps')
             if not os.path.exists(save_path):
                 os.makedirs(save_path)
             np.save(os.path.join(save_path, 'epoch_%d.npy'%epoch), to_save)
+            
         if self.save_loss:
             to_save = self.loss.numpy()
             save_path = os.path.join(self.save_path, 'loss')
