@@ -136,7 +136,7 @@ class Madry():
                 inputs, targets = inputs.cuda(), targets.cuda()
 
                 outputs = self.model(inputs)
-                clean_loss += self.criterion(outputs, targets).item()
+                clean_loss += nn.CrossEntropyLoss()(outputs, targets).item()
                 _, predicted = outputs.max(1)
                 clean_correct += predicted.eq(targets).sum().item()
 
@@ -156,11 +156,11 @@ class Madry():
             for inputs, targets in self.rob_testloader:
                 inputs, targets = inputs.cuda(), targets.cuda()
 
-                adv_inputs = Linf_PGD(self.model, inputs, targets,  eps=8./255., alpha=2./255., steps=10)
+                adv_inputs = Linf_PGD(self.model, inputs, targets, eps=8./255., alpha=2./255., steps=10)
                 
                 with torch.no_grad():
                     outputs = self.model(adv_inputs)
-                    adv_loss += self.criterion(outputs, targets).item()
+                    adv_loss += nn.CrossEntropyLoss()(outputs, targets).item()
                 
                 _, predicted = outputs.max(1)
                 adv_correct += predicted.eq(targets).sum().item()
