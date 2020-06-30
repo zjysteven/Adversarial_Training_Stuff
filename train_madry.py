@@ -227,8 +227,8 @@ def main():
     assert torch.cuda.is_available()
 
     # set up writer, logger, and save directory for models
-    arch = '{:s}{:d}_{:d}'.format(args.arch, args.depth, args.seed)
-    save_root = os.path.join('checkpoints', arch, 'madry')
+    arch = '{:s}{:d}'.format(args.arch, args.depth)
+    save_root = os.path.join('checkpoints', arch, 'madry', str(args.seed))
     subfolder = 'epochs_{:d}_batch_{:d}_lr_{:s}'.format(args.epochs, args.batch_size, args.lr_sch)
     if args.lr_sch == 'cyclic':
         subfolder += '_{:.1f}'.format(args.lr_max)
