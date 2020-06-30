@@ -3,7 +3,7 @@ def model_args(parser):
     group = parser.add_argument_group('Model', 'Arguments control Model')
     group.add_argument('--arch', default='wrn', type=str, choices=['wrn', 'resnet'],
                        help='model architecture')
-    group.add_argument('--depth', default=34, type=int, 
+    group.add_argument('--depth', default=16, type=int, 
                        help='depth of the model')
     group.add_argument('--width', default=10, type=int, 
                        help='widen factor for WideResNet')
@@ -115,6 +115,8 @@ def fast_advt_args(parser):
                        help='perturbation budget for adversarial training')
     group.add_argument('--alpha', default=10, type=int, 
                        help='step size for adversarial training')
+    group.add_argument('--save-per-pixel-eps', action='store_true',
+                       help='whether save per pixel distance between x and x_adv')
 
 
 # WBOX EVALUATION ARGS

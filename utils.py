@@ -179,10 +179,15 @@ class CIFAR10_with_idx(CIFAR10):
         return img, target, index
 
 
-def Linf_distance(x_adv, x):
-    diff = (x_adv - x).view(x.size(0), -1)
-    out = torch.max(torch.abs(diff), 1)[0]
-    return out
+def Linf_distance(x_adv, x, per_pixel=False):
+    #diff = (x_adv - x).view(x.size(0), -1)
+    #out = torch.max(torch.abs(diff), 1)[0]
+    diff = x_adv - x
+    out = torch.max(torch.abs(diff.view(x.size(0), -1)), 1)[0]
+    if per_pixel:
+        return out, diff
+    else:
+        return out
 
 
 # https://github.com/pytorch/pytorch/issues/7455
