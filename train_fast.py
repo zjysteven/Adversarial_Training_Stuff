@@ -106,10 +106,10 @@ class Fast():
             adv_inputs = Linf_PGD(self.model, inputs, targets, **self.attack_cfg, use_amp=self.use_amp)
 
             if self.save_eps:
-                self.eps[idx] = utils.Linf_distance(adv_inputs, inputs).cpu()
+                self.eps[idx] = utils.Linf_distance(adv_inputs.clone().detach(), inputs.clone().detach()).cpu()
             
             if self.save_per_pixel_eps:
-                self.per_pixel_eps[idx] = (adv_inputs - inputs).cpu()
+                self.per_pixel_eps[idx] = (adv_inputs.clone().detach() - inputs.clone().detach()).cpu()
                     
             outputs = self.model(adv_inputs)
             loss = self.criterion(outputs, targets)

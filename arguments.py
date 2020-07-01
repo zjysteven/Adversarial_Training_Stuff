@@ -51,6 +51,8 @@ def base_train_args(parser):
                        help='whether save the epsilon value for each sample per epoch')
     group.add_argument('--donot-save-loss', action="store_false", dest='save_loss',
                        help='whether save the loss value for each sample per epoch')
+    group.add_argument('--save-per-pixel-eps', action='store_true',
+                       help='whether save per pixel distance between x and x_adv')
     group.add_argument('--amp', action='store_true',
                        help='whether use automatic mixed precision from Apex')
 
@@ -76,7 +78,6 @@ def madry_advt_args(parser):
                        help='step size for adversarial training')
     group.add_argument('--steps', default=10, type=int, 
                        help='number of steps for adversarial training')
-    
 
 
 # CUSTOMIZED ADVERSARIAL TRAINING ARGS
@@ -115,8 +116,6 @@ def fast_advt_args(parser):
                        help='perturbation budget for adversarial training')
     group.add_argument('--alpha', default=10, type=int, 
                        help='step size for adversarial training')
-    group.add_argument('--save-per-pixel-eps', action='store_true',
-                       help='whether save per pixel distance between x and x_adv')
 
 
 # WBOX EVALUATION ARGS
