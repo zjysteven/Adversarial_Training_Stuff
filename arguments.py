@@ -37,7 +37,7 @@ def base_train_args(parser):
                        help='maximal learning rate for cyclic schedule')
     group.add_argument('--lr-sch', default='multistep', choices=['cyclic', 'multistep'],
                        help='learning rate schedule type')
-    group.add_argument('--sch-intervals', default=[80,140,180], type=list,
+    group.add_argument('--sch-intervals', default=[80,140,180], type=int, nargs='*',
                        help='learning scheduler milestones for multistep schedule')
     group.add_argument('--lr-gamma', default=0.1, type=float, 
                        help='learning rate decay ratio')

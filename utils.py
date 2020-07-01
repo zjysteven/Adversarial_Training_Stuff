@@ -81,6 +81,10 @@ def get_optimizer_and_scheduler(args, model):
         model, optimizer = amp.initialize(model, optimizer, **amp_args)
     
     if args.lr_sch == 'multistep':
+        if len(args.sch_intervals) > 0:
+            sch_intervals = args.sch_intervals
+        else:
+            sch_intervals = [args.epoch//2, (3*args.epoch)//4]
         scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=args.sch_intervals, gamma=args.lr_gamma)
     elif args.lr_sch == 'cyclic':
         scheduler = optim.lr_scheduler.CyclicLR(optimizer, base_lr=args.lr_min, max_lr=args.lr_max,
