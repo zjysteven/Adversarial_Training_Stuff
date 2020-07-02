@@ -42,12 +42,10 @@ class Fast():
         self.test_robust = args.test_robust
         self.prepare_data(args)
 
-        self.eps = torch.zeros((len(self.trainset)))
+        self.eps = torch.zeros((len(self.trainset), 3, 32, 32))
         self.loss = torch.zeros((len(self.trainset)))
-        self.per_pixel_eps = torch.zeros((len(self.trainset), 3, 32, 32))
         self.save_eps = args.save_eps
         self.save_loss = args.save_loss
-        self.save_per_pixel_eps = args.save_per_pixel_eps
         self.use_amp = args.amp
     
     def prepare_data(self, args):
@@ -104,12 +102,6 @@ class Fast():
             inputs, targets = inputs.cuda(), targets.cuda()
 
             adv_inputs = Linf_PGD(self.model, inputs, targets, **self.attack_cfg, use_amp=self.use_amp)
-
-            if self.save_eps:
-                self.eps[idx] = utils.Linf_distance(adv_inputs.clone().detach(), inputs.clone().detach()).cpu()
-            
-            if self.save_per_pixel_eps:
-                self.per_pixel_eps[idx] = (adv_inputs.clone().detach() - inputs.clone().detach()).cpu()
                     
             outputs = self.model(adv_inputs)
             loss = self.criterion(outputs, targets)
@@ -124,12 +116,16 @@ class Fast():
                     scaled_loss.backward()
             else:
                 loss.backward()
-            self.optimizer.step()            
+            self.optimizer.step()
+            self.scheduler.step()
+
+            if self.save_eps:
+                self.eps[idx] = (adv_inputs-inputs).cpu()            
 
         print_message = 'Epoch [{:3d}] | Adv Loss: {:.4f}'.format(epoch, losses/len(batch_iter))
         tqdm.write(print_message)
 
-        self.scheduler.step()
+        
         self.writer.add_scalar('train/adv_loss', losses/len(batch_iter), epoch)
         self.writer.add_scalar('lr', current_lr, epoch)
 
@@ -205,25 +201,9 @@ class Fast():
             'optimizer_state_dict': self.optimizer.state_dict(),
             'scheduler_state_dict': self.scheduler.state_dict(),
         }, os.path.join(save_path, 'model_'+str(epoch)+'.pth'))
-
-        if self.save_eps:
-            #to_save = self.eps.numpy()
-            #save_path = os.path.join(self.save_path, 'eps')
-            #if not os.path.exists(save_path):
-            #    os.makedirs(save_path)
-            #np.save(os.path.join(save_path, 'epoch_%d.npy'%epoch), to_save)
-            self._save('eps', epoch)
-            
-        if self.save_loss:
-            #to_save = self.loss.numpy()
-            #save_path = os.path.join(self.save_path, 'loss')
-            #if not os.path.exists(save_path):
-            #    os.makedirs(save_path)
-            #np.save(os.path.join(save_path, 'epoch_%d.npy'%epoch), to_save)
-            self._save('loss', epoch)
         
-        if self.save_per_pixel_eps:
-            self._save('per_pixel_eps', epoch)
+        if self.save_eps:
+            self._save('eps', epoch)
 
 
 def get_args():
@@ -254,6 +234,7 @@ def main():
     subfolder += '_alpha_%d' % args.alpha
     if args.amp:
         subfolder += '_%s' % args.opt_level
+
     save_root = os.path.join(save_root, subfolder)
     if not os.path.exists(save_root):
         os.makedirs(save_root)

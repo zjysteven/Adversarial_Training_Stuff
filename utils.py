@@ -79,16 +79,18 @@ def get_optimizer_and_scheduler(args, model):
         if args.opt_level == 'O2':
             amp_args['master_weights'] = args.master_weights
         model, optimizer = amp.initialize(model, optimizer, **amp_args)
+
+    lr_steps = args.epochs * (50000 // args.batch_size + 1)
     
     if args.lr_sch == 'multistep':
         if len(args.sch_intervals) > 0:
             sch_intervals = args.sch_intervals
         else:
-            sch_intervals = [args.epoch//2, (3*args.epoch)//4]
+            sch_intervals = [lr_steps//2, (3*lr_steps)//4]
         scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=args.sch_intervals, gamma=args.lr_gamma)
     elif args.lr_sch == 'cyclic':
         scheduler = optim.lr_scheduler.CyclicLR(optimizer, base_lr=args.lr_min, max_lr=args.lr_max,
-            step_size_up=args.epochs//2, step_size_down=args.epochs-args.epochs//2)
+            step_size_up=lr_steps//2, step_size_down=lr_steps//2)
     
     return model, optimizer, scheduler
 
