@@ -125,7 +125,6 @@ class Fast():
         print_message = 'Epoch [{:3d}] | Adv Loss: {:.4f}'.format(epoch, losses/len(batch_iter))
         tqdm.write(print_message)
 
-        
         self.writer.add_scalar('train/adv_loss', losses/len(batch_iter), epoch)
         self.writer.add_scalar('lr', current_lr, epoch)
 
@@ -204,6 +203,9 @@ class Fast():
         
         if self.save_eps:
             self._save('eps', epoch)
+        
+        if self.save_loss:
+            self._save('loss', epoch)
 
 
 def get_args():

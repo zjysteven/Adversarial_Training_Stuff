@@ -42,7 +42,7 @@ class Madry():
         self.test_robust = args.test_robust
         self.prepare_data(args)
 
-        self.eps = torch.zeros((len(self.trainset)))
+        self.eps = torch.zeros((len(self.trainset), 3, 32, 32))
         self.loss = torch.zeros((len(self.trainset)))
         self.save_eps = args.save_eps
         self.save_loss = args.save_loss
@@ -101,9 +101,6 @@ class Madry():
 
             adv_inputs = Linf_PGD(self.model, inputs, targets, **self.attack_cfg, use_amp=self.use_amp)
 
-            if self.save_eps:
-                self.eps[idx] = utils.Linf_distance(adv_inputs, inputs).cpu()
-
             outputs = self.model(adv_inputs)
             loss = self.criterion(outputs, targets)
             if self.save_loss:
@@ -117,12 +114,15 @@ class Madry():
                     scaled_loss.backward()
             else:
                 loss.backward()
-            self.optimizer.step()            
+            self.optimizer.step() 
+            self.scheduler.step()
+
+            if self.save_eps:
+                self.eps[idx] = (adv_inputs-inputs).cpu()          
 
         print_message = 'Epoch [{:3d}] | Adv Loss: {:.4f}'.format(epoch, losses/len(batch_iter))
         tqdm.write(print_message)
 
-        self.scheduler.step()
         self.writer.add_scalar('train/adv_loss', losses/len(batch_iter), epoch)
 
     def test(self, epoch):
@@ -176,6 +176,12 @@ class Madry():
         
         tqdm.write(print_message)
 
+    def _save(self, attr_name, epoch):
+        to_save = eval('self.'+attr_name).numpy()
+        save_path = os.path.join(self.save_path, attr_name)
+        if not os.path.exists(save_path):
+            os.makedirs(save_path)
+        np.save(os.path.join(save_path, 'epoch_%d.npy'%epoch), to_save)
 
     def save(self, epoch):
         try:
@@ -193,18 +199,11 @@ class Madry():
         }, os.path.join(save_path, 'model_'+str(epoch)+'.pth'))
 
         if self.save_eps:
-            to_save = self.eps.numpy()
-            save_path = os.path.join(self.save_path, 'eps')
-            if not os.path.exists(save_path):
-                os.makedirs(save_path)
-            np.save(os.path.join(save_path, 'epoch_%d.npy'%epoch), to_save)
-            
+            self._save('eps', epoch)
+
         if self.save_loss:
-            to_save = self.loss.numpy()
-            save_path = os.path.join(self.save_path, 'loss')
-            if not os.path.exists(save_path):
-                os.makedirs(save_path)
-            np.save(os.path.join(save_path, 'epoch_%d.npy'%epoch), to_save)
+            self._save('loss', epoch)
+
 
 
 def get_args():
