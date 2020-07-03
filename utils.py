@@ -87,7 +87,7 @@ def get_optimizer_and_scheduler(args, model):
             sch_intervals = args.sch_intervals
         else:
             sch_intervals = [lr_steps//2, (3*lr_steps)//4]
-        scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=args.sch_intervals, gamma=args.lr_gamma)
+        scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=sch_intervals, gamma=args.lr_gamma)
     elif args.lr_sch == 'cyclic':
         scheduler = optim.lr_scheduler.CyclicLR(optimizer, base_lr=args.lr_min, max_lr=args.lr_max,
             step_size_up=lr_steps//2, step_size_down=lr_steps//2)

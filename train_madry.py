@@ -94,6 +94,8 @@ class Madry():
     def train(self, epoch):
         self.model.train()
         losses = 0
+
+        current_lr = self.scheduler.get_last_lr()[0]
         
         batch_iter = self.get_batch_iterator()
         for inputs, targets, idx in batch_iter:
@@ -124,6 +126,7 @@ class Madry():
         tqdm.write(print_message)
 
         self.writer.add_scalar('train/adv_loss', losses/len(batch_iter), epoch)
+        self.writer.add_scalar('lr', current_lr, epoch)
 
     def test(self, epoch):
         self.model.eval()
