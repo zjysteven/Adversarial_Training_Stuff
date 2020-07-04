@@ -94,8 +94,8 @@ def main():
         #print(output_root)
         #exit()
 
-        #if not os.path.exists(output_root):
-        #    os.makedirs(output_root)
+        if not os.path.exists(output_root):
+            os.makedirs(output_root)
 
     if args.convergence_check:
         eps = 0.03
