@@ -1,5 +1,4 @@
-import os, json, argparse, hashlib, logging, random
-os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+import os, json, argparse, logging, random
 from tqdm import tqdm
 import pandas as pd
 
@@ -59,15 +58,15 @@ def main():
     assert torch.cuda.is_available()
 
     # load model
-    model = utils.get_model(args, train=False, model_file=args.model_file)
+    model = utils.setup(args, train=False, model_file=args.model_file)
 
     # get data loaders
     if args.subset_num > 0:
         random.seed(0)
         subset_idx = random.sample(range(10000), args.subset_num)
-        testloader = utils.get_testloader(args, batch_size=200, shuffle=False, subset_idx=subset_idx)
+        testloader = utils.get_test_loader(args, batch_size=500, shuffle=False, subset_idx=subset_idx)
     else:
-        testloader = utils.get_testloader(args, batch_size=200, shuffle=False)
+        testloader = utils.get_test_loader(args, batch_size=500, shuffle=False)
 
     """
     # BIM
@@ -89,6 +88,13 @@ def main():
     rob['sample_num'] = args.subset_num if args.subset_num else 10000
     rob['loss_fn'] = 'xent' if args.loss_fn == 'xent' else 'cw_{:.1f}'.format(args.cw_conf)
 
+    if args.save_to_csv:
+        output_root = args.model_file.replace('checkpoints', 'wbox_results').replace('state_dicts/', '')
+        output_root = output_root.split('.')[0]
+
+        if not os.path.exists(output_root):
+            os.makedirs(output_root)
+
     if args.convergence_check:
         eps = 0.03
         steps_list = [50, 500, 1000]
@@ -103,7 +109,7 @@ def main():
             model, loss_fn=nn.CrossEntropyLoss(), eps=eps, 
             clip_min=0., clip_max=1., targeted=False)
         _, label, pred, advpred = attack_whole_dataset(adversary, test_iter, device="cuda")
-        print("Accuracy: {:.2f}%, FGSM Accuracy: {:.2f}%".format(
+        tqdm.write("Accuracy: {:.2f}%, FGSM Accuracy: {:.2f}%".format(
             100. * (label == pred).sum().item() / len(label),
             100. * (label == advpred).sum().item() / len(label)))
         rob['clean'] = 100. * (label == pred).sum().item() / len(label)
@@ -141,15 +147,7 @@ def main():
         
         # save to file
         if args.save_to_csv:
-            output_root = os.path.join('wbox_results', args.model_file.split('/')[1], 'convergence_check')
-            #if args.subset_num:
-            #    output_root = os.path.join(output_root, 'subset')
-            if not os.path.exists(output_root):
-                os.makedirs(output_root)
-            output_filename = args.model_file.split('/')[-2]
-            #if args.subset_num:
-            #    output_filename += '_subset'
-            output = os.path.join(output_root, '.'.join((output_filename, 'csv')))
+            output = os.path.join(output_root, 'convergence.csv')
 
             df = pd.DataFrame(rob, index=[0])
             if args.append_out and os.path.isfile(output):
@@ -160,7 +158,49 @@ def main():
                 df.to_csv(output, sep=',', mode='a', header=False, index=False, float_format='%.2f')
             else:
                 df.to_csv(output, sep=',', index=False, float_format='%.2f')
+    elif args.benchmark:
+        rob['random_start'] = args.random_start
+        rob['steps'] = args.steps
+        eps = 8./255.
+        alpha = 2./255.
 
+        correct_or_not = []
+
+        for i in tqdm(range(args.random_start), desc='Random Start', leave=True, position=1):
+            torch.manual_seed(i)
+            test_iter = tqdm(testloader, desc='Batch', leave=False, position=2)
+
+            adversary = LinfPGDAttack(
+                model, loss_fn=loss_fn, eps=eps,
+                nb_iter=args.steps, eps_iter=alpha, rand_init=True, clip_min=0., clip_max=1.,
+                targeted=False)
+                
+            _, label, pred, advpred = attack_whole_dataset(adversary, test_iter, device="cuda")
+            correct_or_not.append(label == advpred)
+            
+        correct_or_not = torch.stack(correct_or_not, dim=-1).all(dim=-1)
+
+        tqdm.write("Accuracy: {:.2f}%, eps: {:.2f}, PGD Accuracy: {:.2f}%".format(
+            100. * (label == pred).sum().item() / len(label),
+            eps,
+            100. * correct_or_not.sum().item() / len(label)))
+            
+        rob['clean'] = 100. * (label == pred).sum().item() / len(label)
+        rob['adv'] = 100. * correct_or_not.sum().item() / len(label)
+
+        # save to file
+        if args.save_to_csv:
+            output = os.path.join(output_root, 'benchmark.csv')
+
+            df = pd.DataFrame(rob, index=[0])
+            if args.append_out and os.path.isfile(output):
+                with open(output, 'a') as f:
+                    f.write('\n')
+                #with open(output, 'a') as f:
+                #    df.to_csv(f, sep=',', header=f.tell()==0, index=False)
+                df.to_csv(output, sep=',', mode='a', header=False, index=False, float_format='%.2f')
+            else:
+                df.to_csv(output, sep=',', index=False, float_format='%.2f')
     else:
         eps_list = [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07]
 
@@ -203,15 +243,7 @@ def main():
         
         # save to file
         if args.save_to_csv:
-            output_root = os.path.join('wbox_results', args.model_file.split('/')[1])
-            #if args.subset_num:
-            #    output_root = os.path.join(output_root, 'subset')
-            if not os.path.exists(output_root):
-                os.makedirs(output_root)
-            output_filename = args.model_file.split('/')[-2] + '_epoch_%s' % (args.model_file.split('/')[-1].split('_')[-1].split('.')[0])
-            #if args.subset_num:
-            #    output_filename += '_subset'
-            output = os.path.join(output_root, '.'.join((output_filename, 'csv')))
+            output = os.path.join(output_root, 'robustness_vs_eps.csv')
 
             df = pd.DataFrame(rob, index=[0])
             if args.append_out and os.path.isfile(output):

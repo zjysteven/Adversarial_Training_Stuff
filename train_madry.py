@@ -47,6 +47,7 @@ class Madry():
         self.save_eps = args.save_eps
         self.save_loss = args.save_loss
         self.use_amp = args.amp
+        self.eval_when_attack = args.eval_when_attack
 
     def prepare_data(self, args):
         transform_train = transforms.Compose([
@@ -77,7 +78,7 @@ class Madry():
 
     def get_epoch_iterator(self):
         iterator = tqdm(list(range(1, self.epochs+1)), total=self.epochs, desc='Epoch',
-                        leave=False, position=1)
+                        leave=True, position=1)
         return iterator
 
     def get_batch_iterator(self):
@@ -101,7 +102,11 @@ class Madry():
         for inputs, targets, idx in batch_iter:
             inputs, targets = inputs.cuda(), targets.cuda()
 
-            adv_inputs = Linf_PGD(self.model, inputs, targets, **self.attack_cfg, use_amp=self.use_amp)
+            adv_inputs = Linf_PGD(self.model.eval() if self.eval_when_attack else self.model, 
+                inputs, targets, **self.attack_cfg, use_amp=self.use_amp)
+            
+            if self.eval_when_attack:
+                self.model.train()
 
             outputs = self.model(adv_inputs)
             loss = self.criterion(outputs, targets)
@@ -199,7 +204,7 @@ class Madry():
             'model_state_dict': state_dict,
             'optimizer_state_dict': self.optimizer.state_dict(),
             'scheduler_state_dict': self.scheduler.state_dict(),
-        }, os.path.join(save_path, 'model_'+str(epoch)+'.pth'))
+        }, os.path.join(save_path, 'epoch_'+str(epoch)+'.pth'))
 
         if self.save_eps:
             self._save('eps', epoch)
@@ -235,6 +240,8 @@ def main():
     if args.lr_sch == 'cyclic':
         subfolder += '_{:.1f}'.format(args.lr_max)
     subfolder += '_alpha_%d_steps_%d' % (args.alpha, args.steps)
+    if args.eval_when_attack:
+        subfolder += '_eval'
     if args.amp:
         subfolder += '_%s' % args.opt_level
     save_root = os.path.join(save_root, subfolder)

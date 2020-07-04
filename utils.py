@@ -47,16 +47,20 @@ def setup(args, train=True, model_file=None):
                 name = k[7:] # remove `module.`
                 new_state_dict[name] = v
             model.load_state_dict(new_state_dict)
-    if train:
-        model.train()
-    else:
-        model.eval()
 
     # set up the normalizer
     mean = torch.tensor([0.4914, 0.4822, 0.4465], dtype=torch.float32)
     std = torch.tensor([0.2023, 0.1994, 0.2010], dtype=torch.float32)
     normalizer = NormalizeByChannelMeanStd(mean=mean, std=std)
     model = ModelWrapper(model, normalizer).cuda()
+
+    if train:
+        model.train()
+    else:
+        model.eval()
+        if torch.cuda.device_count() > 1:
+            model = nn.DataParallel(model)
+        return model
 
     # set up optimizer and scheduler
     model, optimizer, scheduler = get_optimizer_and_scheduler(args, model)

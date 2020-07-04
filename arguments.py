@@ -7,8 +7,6 @@ def model_args(parser):
                        help='depth of the model')
     group.add_argument('--width', default=10, type=int, 
                        help='widen factor for WideResNet')
-    group.add_argument('--model-file', default=None, type=str,
-                       help='Directory containing model checkpoints')
     group.add_argument('--gpu', default='0,1', type=str, 
                        help='gpu id')
     group.add_argument('--seed', default=233, type=int,
@@ -53,6 +51,8 @@ def base_train_args(parser):
                        help='whether save the loss value for each sample per epoch')
     group.add_argument('--save-per-pixel-eps', action='store_true',
                        help='whether save per pixel distance between x and x_adv')
+    group.add_argument('--eval-when-attack', action='store_true',
+                       help='whether set model to eval mode when generating adv examples')
     group.add_argument('--amp', action='store_true',
                        help='whether use automatic mixed precision from Apex')
 
@@ -121,16 +121,20 @@ def fast_advt_args(parser):
 # WBOX EVALUATION ARGS
 def wbox_eval_args(parser):
     group = parser.add_argument_group('White-box_Evaluation', 'Arguments to configure evaluation of white-box robustness')
-    group.add_argument('--subset-num', default=1000, type=int, 
+    group.add_argument('--model-file', default=None, type=str,
+                       help='Path to the model checkpoint')
+    group.add_argument('--subset-num', default=0, type=int, 
                        help='number of samples of the subset, will use the full test set if zero')
     group.add_argument('--random-start', default=1, type=int, 
                        help='number of random starts for PGD')
-    group.add_argument('--steps', default=50, type=int, 
+    group.add_argument('--steps', default=20, type=int, 
                        help='number of steps for PGD')
     group.add_argument('--loss-fn', default='xent', type=str, choices=['xent', 'cw'],
                        help='which loss function to use')
     group.add_argument('--cw-conf', default=50., type=float,
                        help='confidence for cw loss function')
+    group.add_argument('--benchmark', action='store_true',
+                       help='test the robustness under eps=8/255 alpha=2/255')
     group.add_argument('--early-stop', action="store_true", 
                        help='whether jump over the following evaluation for larger epsilon when the accuracy is alreday zero')
     group.add_argument('--save-to-csv', action="store_true",

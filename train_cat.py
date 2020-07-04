@@ -61,6 +61,7 @@ class CAT():
         self.label_smoothing = args.label_smoothing
         self.use_distance_for_eps = args.use_distance_for_eps
         self.use_amp = args.amp
+        self.eval_when_attack = args.eval_when_attack
 
     def prepare_data(self, args):
         transform_train = transforms.Compose([
@@ -91,7 +92,7 @@ class CAT():
 
     def get_epoch_iterator(self):
         iterator = tqdm(list(range(1, self.epochs+1)), total=self.epochs, desc='Epoch',
-                        leave=False, position=1)
+                        leave=True, position=1)
         return iterator
 
     def get_batch_iterator(self):
@@ -133,9 +134,12 @@ class CAT():
                 self.attack_cfg['alpha'] = self.adapt_alpha*eps_per_sample/self.attack_cfg['steps']
 
             # generate adversarial examples
-            adv_return = Linf_PGD(self.model, inputs, soft_targets if self.label_smoothing else targets, 
+            adv_return = Linf_PGD(self.model.eval() if self.eval_when_attack else self.model, inputs, soft_targets if self.label_smoothing else targets, 
                 eps=eps_per_sample, **self.attack_cfg, return_mask=False if self.use_distance_for_eps else True, use_amp=self.use_amp, optimizer=self.optimizer)
             
+            if self.eval_when_attack:
+                self.model.train()
+
             if isinstance(adv_return, tuple):
                 adv_inputs, correct_mask = adv_return
             else:
@@ -259,7 +263,7 @@ class CAT():
             'model_state_dict': state_dict,
             'optimizer_state_dict': self.optimizer.state_dict(),
             'scheduler_state_dict': self.scheduler.state_dict(),
-        }, os.path.join(save_path, 'model_'+str(epoch)+'.pth'))
+        }, os.path.join(save_path, 'epoch_'+str(epoch)+'.pth'))
 
         if self.save_eps:
             to_save = self.eps.numpy()
@@ -313,6 +317,8 @@ def main():
         subfolder += '_rs'
     if not args.label_smoothing:
         subfolder += '_no_ls'
+    if args.eval_when_attack:
+        subfolder += '_eval'
     if args.amp:
         subfolder += '_%s' % args.opt_level
     save_root = os.path.join(save_root, subfolder)
