@@ -89,11 +89,13 @@ def main():
     rob['loss_fn'] = 'xent' if args.loss_fn == 'xent' else 'cw_{:.1f}'.format(args.cw_conf)
 
     if args.save_to_csv:
-        output_root = args.model_file.replace('checkpoints', 'wbox_results').replace('state_dicts/', '')
+        output_root = args.model_file.replace('state_dicts', 'wbox_results')
         output_root = output_root.split('.')[0]
+        #print(output_root)
+        #exit()
 
-        if not os.path.exists(output_root):
-            os.makedirs(output_root)
+        #if not os.path.exists(output_root):
+        #    os.makedirs(output_root)
 
     if args.convergence_check:
         eps = 0.03
