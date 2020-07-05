@@ -48,6 +48,18 @@ class Madry():
         self.save_loss = args.save_loss
         self.use_amp = args.amp
         self.eval_when_attack = args.eval_when_attack
+        self.increase_steps = args.increase_steps
+        self.increase_eps = args.increase_eps
+        if self.increase_steps:
+            assert len(args.more_steps) > 0
+            assert len(args.more_steps) == len(args.steps_intervals)
+            self.more_steps = np.array(args.more_steps)
+            self.steps_intervals = np.array(args.steps_intervals)
+        if self.increase_eps:
+            assert len(args.more_eps) > 0
+            assert len(args.more_eps) == len(args.eps_intervals)
+            self.more_eps = np.array(args.more_eps)
+            self.eps_intervals = np.array(args.eps_intervals)
 
     def prepare_data(self, args):
         transform_train = transforms.Compose([
@@ -97,7 +109,20 @@ class Madry():
         losses = 0
 
         current_lr = self.scheduler.get_last_lr()[0]
+
+        if self.increase_steps:
+            current_steps_idx = self.steps_intervals < epoch
+            if np.any(current_steps_idx):
+                current_steps = self.more_steps[current_steps_idx][-1]
+                self.attack_cfg['steps'] = current_steps
         
+        if self.increase_eps:
+            current_eps_idx = self.eps_intervals < epoch
+            if np.any(current_eps_idx):
+                current_eps = self.more_eps[current_eps_idx][-1]
+                self.attack_cfg['eps'] = float(current_eps / 255.)
+        
+        correct = 0
         batch_iter = self.get_batch_iterator()
         for inputs, targets, idx in batch_iter:
             inputs, targets = inputs.cuda(), targets.cuda()
@@ -115,6 +140,9 @@ class Madry():
             loss = loss.mean()
             losses += loss.item()
 
+            _, predicted = outputs.max(1)
+            correct += predicted.eq(targets).sum().item()
+
             self.optimizer.zero_grad()
             if self.use_amp:
                 with amp.scale_loss(loss, self.optimizer) as scaled_loss:
@@ -127,11 +155,14 @@ class Madry():
             if self.save_eps:
                 self.eps[idx] = (adv_inputs-inputs).cpu()          
 
-        print_message = 'Epoch [{:3d}] | Adv Loss: {:.4f}'.format(epoch, losses/len(batch_iter))
+        print_message = 'Epoch [{:3d}] | Adv Loss: {:.4f}, Adv Acc: {:.2%}'.format(epoch, losses/len(batch_iter), correct/len(self.trainset))
         tqdm.write(print_message)
 
         self.writer.add_scalar('train/adv_loss', losses/len(batch_iter), epoch)
+        self.writer.add_scalar('train/adv_acc', correct/len(self.trainset), epoch)
         self.writer.add_scalar('lr', current_lr, epoch)
+        self.writer.add_scalar('steps', self.attack_cfg['steps'], epoch)
+        self.writer.add_scalar('eps', int(self.attack_cfg['eps']*255), epoch)
 
     def test(self, epoch):
         self.model.eval()
@@ -178,7 +209,7 @@ class Madry():
             self.writer.add_scalar('test/adv_loss', adv_loss/len(self.rob_testloader), epoch)
             self.writer.add_scalar('test/adv_acc', 100*adv_correct/total, epoch)
 
-            print_message += '\tAdv Loss {loss:.4f}\tAdv Acc {acc:.2%}'.format(
+            print_message += '\tAdv Loss {loss:.4f}\tAdv Acc {acc:.2%}\n'.format(
                 loss=adv_loss/len(self.testloader), acc=adv_correct/total
             )
         
@@ -240,6 +271,10 @@ def main():
     if args.lr_sch == 'cyclic':
         subfolder += '_{:.1f}'.format(args.lr_max)
     subfolder += '_alpha_%d_steps_%d' % (args.alpha, args.steps)
+    if args.increase_steps:
+        subfolder += '_[%s]@[%s]' % (','.join(str(e) for e in args.more_steps), ','.join(str(e) for e in args.steps_intervals))
+    if args.increase_eps:
+        subfolder += '_increase_eps'
     if args.eval_when_attack:
         subfolder += '_eval'
     if args.amp:

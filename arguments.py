@@ -49,8 +49,6 @@ def base_train_args(parser):
                        help='whether save the epsilon value for each sample per epoch')
     group.add_argument('--donot-save-loss', action="store_false", dest='save_loss',
                        help='whether save the loss value for each sample per epoch')
-    group.add_argument('--save-per-pixel-eps', action='store_true',
-                       help='whether save per pixel distance between x and x_adv')
     group.add_argument('--eval-when-attack', action='store_true',
                        help='whether set model to eval mode when generating adv examples')
     group.add_argument('--amp', action='store_true',
@@ -78,6 +76,18 @@ def madry_advt_args(parser):
                        help='step size for adversarial training')
     group.add_argument('--steps', default=10, type=int, 
                        help='number of steps for adversarial training')
+    group.add_argument('--increase-steps', action='store_true',
+                       help='whether increase the number of steps during the training')
+    group.add_argument('--more-steps', nargs='*', default=[], type=int,
+                       help='other numbers of steps that would be used to generate adv examples')
+    group.add_argument('--steps-intervals', nargs='*', default=[], type=int,
+                       help='the timespot to change the number of steps')
+    group.add_argument('--increase-eps', action='store_true',
+                       help='whether increase the number of steps during the training')
+    group.add_argument('--more-eps', nargs='*', default=[], type=int,
+                       help='other numbers of steps that would be used to generate adv examples')
+    group.add_argument('--eps-intervals', nargs='*', default=[], type=int,
+                       help='the timespot to change the number of steps')
 
 
 # CUSTOMIZED ADVERSARIAL TRAINING ARGS
