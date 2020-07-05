@@ -24,7 +24,9 @@ def gradient_wrt_data(model, inputs, targets, criterion, use_amp=False, optimize
     return data_grad.clone().detach()
 
 
-def Linf_PGD(model, dat, lbl, eps, alpha, steps, is_targeted=False, rand_start=True, criterion=nn.CrossEntropyLoss(), inner_max='madry', return_mask=False, use_amp=False, optimizer=None):
+def Linf_PGD(model, dat, lbl, eps, alpha, steps, 
+             is_targeted=False, rand_start=True, criterion=nn.CrossEntropyLoss(), inner_max='madry', 
+             return_mask=False, use_amp=False, optimizer=None):
     assert type(eps) == type(alpha), 'eps and alpha type should match'
     assert isinstance(eps, float) or isinstance(eps, torch.Tensor), 'eps type is not valid'
     

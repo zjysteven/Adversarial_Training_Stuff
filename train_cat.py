@@ -135,7 +135,9 @@ class CAT():
 
             # generate adversarial examples
             adv_return = Linf_PGD(self.model.eval() if self.eval_when_attack else self.model, inputs, soft_targets if self.label_smoothing else targets, 
-                eps=eps_per_sample, **self.attack_cfg, return_mask=False if self.use_distance_for_eps else True, use_amp=self.use_amp, optimizer=self.optimizer)
+                eps=eps_per_sample, **self.attack_cfg, 
+                return_mask=False if self.use_distance_for_eps else True, 
+                use_amp=self.use_amp, optimizer=self.optimizer)
             
             if self.eval_when_attack:
                 self.model.train()
@@ -313,10 +315,13 @@ def main():
     else:
         subfolder += '_adapt_alpha_{:.2f}x'.format(args.adapt_alpha)
     subfolder += '_steps_%d' % args.steps
+    subfolder += '_eta_%.3f' % args.eta
     if args.rs:
         subfolder += '_rs'
     if not args.label_smoothing:
         subfolder += '_no_ls'
+    else:
+        subfolder += '_ls_c%d' % args.c
     if args.eval_when_attack:
         subfolder += '_eval'
     if args.amp:
