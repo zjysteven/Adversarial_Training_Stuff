@@ -91,8 +91,6 @@ def main():
     if args.save_to_csv:
         output_root = args.model_file.replace('state_dicts', 'wbox_results')
         output_root = output_root.split('.')[0]
-        #print(output_root)
-        #exit()
 
         if not os.path.exists(output_root):
             os.makedirs(output_root)
