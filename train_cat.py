@@ -109,6 +109,9 @@ class CAT():
     def train(self, epoch):
         self.model.train()
         losses = 0
+        correct = 0
+
+        current_lr = self.scheduler.get_last_lr()[0]
         
         batch_iter = self.get_batch_iterator()
         for inputs, targets, idx in batch_iter:
@@ -138,9 +141,6 @@ class CAT():
                 eps=eps_per_sample, **self.attack_cfg, 
                 return_mask=False if self.use_distance_for_eps else True, 
                 use_amp=self.use_amp, optimizer=self.optimizer)
-            
-            if self.eval_when_attack:
-                self.model.train()
 
             if isinstance(adv_return, tuple):
                 adv_inputs, correct_mask = adv_return
@@ -159,6 +159,9 @@ class CAT():
                 _, predicted = outputs.max(1)
                 wrong_idx = ~(predicted.eq(targets))
                 eps_per_sample[wrong_idx] -= self.eta
+
+            if self.eval_when_attack:
+                self.model.train()
             
             # make sure eps do not exceed max eps
             eps_per_sample = torch.clamp(eps_per_sample, 0., self.max_eps)
@@ -182,6 +185,9 @@ class CAT():
                 loss = eval(self.criterion)(reduction='mean')(outputs, soft_targets if self.label_smoothing else targets)
             losses += loss.item()
 
+            _, predicted = outputs.max(1)
+            correct += predicted.eq(targets).sum().item()
+
             self.optimizer.zero_grad()
             if self.use_amp:
                 with amp.scale_loss(loss, self.optimizer) as scaled_loss:
@@ -189,8 +195,7 @@ class CAT():
             else:
                 loss.backward()
             self.optimizer.step()            
-
-        self.scheduler.step()
+            self.scheduler.step()
 
         non_zero_eps = torch.sum(self.eps>0).item()
 
@@ -199,7 +204,9 @@ class CAT():
 
         self.scheduler.step()
         self.writer.add_scalar('train/adv_loss', losses/len(batch_iter), epoch)
+        self.writer.add_scalar('train/adv_acc', correct/len(self.trainset), epoch)
         self.writer.add_scalar('train/non_zero_eps', non_zero_eps, epoch)
+        self.writer.add_scalar('lr', current_lr, epoch)
 
     def test(self, epoch):
         self.model.eval()
@@ -303,7 +310,7 @@ def main():
 
     # set up writer, logger, and save directory for models
     arch = '{:s}{:d}'.format(args.arch, args.depth)
-    save_root = os.path.join('checkpoints', arch, 'cat', str(args.seed))
+    save_root = os.path.join('checkpoints', arch, 'cat', 'seed_%d'%args.seed)
     subfolder = 'epochs_{:d}_batch_{:d}_lr_{:s}'.format(args.epochs, args.batch_size, args.lr_sch)
     if args.lr_sch == 'cyclic':
         subfolder += '_{:.1f}'.format(args.lr_max)
