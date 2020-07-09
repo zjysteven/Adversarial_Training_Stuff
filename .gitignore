@@ -8,6 +8,5 @@ models_from_robustness.py
 *.sh
 *.bundle
 plot*
-train_cat_fast.py
-train_cat_minhao_my*
-train_cat_minhao_with*
+train_cat_*
+*minhao*.py
