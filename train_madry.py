@@ -44,8 +44,10 @@ class Madry():
 
         self.eps = torch.zeros((len(self.trainset), 3, 32, 32))
         self.loss = torch.zeros((len(self.trainset)))
+        self.fosc = torch.zeros((len(self.trainset)))
         self.save_eps = args.save_eps
         self.save_loss = args.save_loss
+        self.save_fosc = args.save_fosc
         self.use_amp = args.amp
         self.eval_when_attack = args.eval_when_attack
         self.increase_steps = args.increase_steps
@@ -127,8 +129,15 @@ class Madry():
         for inputs, targets, idx in batch_iter:
             inputs, targets = inputs.cuda(), targets.cuda()
 
-            adv_inputs = Linf_PGD(self.model.eval() if self.eval_when_attack else self.model, 
-                inputs, targets, **self.attack_cfg, use_amp=self.use_amp)
+            adv_return = Linf_PGD(self.model.eval() if self.eval_when_attack else self.model, 
+                inputs, targets, **self.attack_cfg, use_amp=self.use_amp, optimizer=self.optimizer,
+                fosc=self.save_fosc)
+
+            if self.save_fosc:
+                adv_inputs, fosc_val = adv_return
+                self.fosc[idx] = fosc_val.cpu()
+            else:
+                adv_inputs = adv_return
             
             if self.eval_when_attack:
                 self.model.train()
@@ -242,6 +251,9 @@ class Madry():
 
         if self.save_loss:
             self._save('loss', epoch)
+
+        if self.save_fosc:
+            self._save('fosc', epoch)
 
 
 

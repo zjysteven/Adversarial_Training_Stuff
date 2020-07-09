@@ -26,7 +26,7 @@ def gradient_wrt_data(model, inputs, targets, criterion, use_amp=False, optimize
 
 def Linf_PGD(model, dat, lbl, eps, alpha, steps, 
              is_targeted=False, rand_start=True, criterion=nn.CrossEntropyLoss(), inner_max='madry', 
-             return_mask=False, use_amp=False, optimizer=None):
+             return_mask=False, use_amp=False, optimizer=None, fosc=False):
     assert type(eps) == type(alpha), 'eps and alpha type should match'
     assert isinstance(eps, float) or isinstance(eps, torch.Tensor), 'eps type is not valid'
     
@@ -70,6 +70,15 @@ def Linf_PGD(model, dat, lbl, eps, alpha, steps,
             x_adv = torch.clamp(x_adv, 0., 1.)
     
     if inner_max in ['madry', 'cat_paper']:
+        if fosc:
+            # https://github.com/YisenWang/dynamic_adv_training/blob/master/pgd_attack.py
+            # set loss reduction to sum, otherwise the fosc value is too small
+            grad = gradient_wrt_data(model, x_adv, lbl, nn.CrossEntropyLoss(reduction='sum'), use_amp=False)
+            grad_flatten = grad.view(grad.shape[0], -1)
+            grad_norm = torch.norm(grad_flatten, 1, dim=1)
+            diff = (x_adv.clone().detach() - x_nat).view(x_nat.shape[0], -1)
+            fosc_value = eps * grad_norm - (grad_flatten * diff).sum(dim=1)
+            return x_adv.clone().detach(), fosc_value
         return x_adv.clone().detach()
     elif inner_max == 'cat_code':
         if len(lbl.shape) == 2:
