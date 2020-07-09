@@ -1,7 +1,7 @@
 # MODEL OPTS
 def model_args(parser):
     group = parser.add_argument_group('Model', 'Arguments control Model')
-    group.add_argument('--arch', default='wrn', type=str, choices=['wrn', 'resnet'],
+    group.add_argument('--arch', default='wrn', type=str, choices=['wrn', 'resnet', 'pre_resnet'],
                        help='model architecture')
     group.add_argument('--depth', default=16, type=int, 
                        help='depth of the model')
@@ -49,6 +49,8 @@ def base_train_args(parser):
                        help='whether save the epsilon value for each sample per epoch')
     group.add_argument('--donot-save-loss', action="store_false", dest='save_loss',
                        help='whether save the loss value for each sample per epoch')
+    group.add_argument('--donot-save-fosc', action="store_false", dest='save_fosc',
+                       help='whether save the fosc value for each sample per epoch')
     group.add_argument('--eval-when-attack', action='store_true',
                        help='whether set model to eval mode when generating adv examples')
     group.add_argument('--amp', action='store_true',

@@ -33,6 +33,11 @@ def setup(args, train=True, model_file=None):
             model = resnet_cifar.resnet(depth=args.depth)
         else:
             raise ValueError('Depth %d is not valid for ResNet...' % args.depth)
+    elif args.arch == 'pre_resnet':
+        if args.depth in [18, 34, 50, 101, 152]:
+            model = resnet_imagenet.preact_resnet(depth=args.depth)
+        else:
+            raise ValueError('Depth %d is not valid for PreActResNet...' % args.depth)
     else:
         raise ValueError('Architecture [%s] is not supported yet...' % args.arch)
     
