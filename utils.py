@@ -141,7 +141,7 @@ def get_train_loaders(args):
     return trainloader, testloader
 
 
-def get_test_loader(args, batch_size=100, shuffle=False, subset_idx=None):
+def get_loader(args, train=False, batch_size=100, shuffle=False, subset_idx=None):
     kwargs = {'num_workers': 4,
               'batch_size': batch_size,
               'shuffle': shuffle,
@@ -150,11 +150,11 @@ def get_test_loader(args, batch_size=100, shuffle=False, subset_idx=None):
         transforms.ToTensor(),
     ])
     if subset_idx is not None:
-        testset = Subset(datasets.CIFAR10(root=args.data_dir, train=False,
+        testset = Subset(datasets.CIFAR10(root=args.data_dir, train=train,
                                 transform=transform_test,
                                 download=False), subset_idx)
     else:
-        testset = datasets.CIFAR10(root=args.data_dir, train=False,
+        testset = datasets.CIFAR10(root=args.data_dir, train=train,
                                 transform=transform_test,
                                 download=False)
     testloader = DataLoader(testset, **kwargs)
@@ -219,6 +219,31 @@ class CE_with_soft_label(nn.Module):
             return loss
         else:
             raise ValueError("Reduction type '{:s}' is not supported!".format(self.reduction))
+
+
+class CarliniWagnerLoss(nn.Module):
+    """
+    Carlini-Wagner Loss: objective function #6.
+    Paper: https://arxiv.org/pdf/1608.04644.pdf
+    """
+
+    def __init__(self, conf=50.):
+        super(CarliniWagnerLoss, self).__init__()
+        self.conf = conf
+
+    def forward(self, input, target):
+        """
+        :param input: pre-softmax/logits.
+        :param target: true labels.
+        :return: CW loss value.
+        """
+        num_classes = input.size(1)
+        label_mask = to_one_hot(target, num_classes=num_classes).float()
+        correct_logit = torch.sum(label_mask * input, dim=1)
+        wrong_logit = torch.max((1. - label_mask) * input, dim=1)[0]
+        loss = -F.relu(correct_logit - wrong_logit + self.conf).sum()
+        return loss
+
 
 
 if __name__ == '__main__':
