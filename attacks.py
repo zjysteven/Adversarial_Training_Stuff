@@ -72,15 +72,13 @@ def Linf_PGD(model, dat, lbl, eps, alpha, steps,
             x_adv = torch.max(torch.min(x_adv, x_nat+eps), x_nat-eps)
             # Make sure we are still in bounds
             x_adv = torch.clamp(x_adv, 0., 1.)
-        
-    x_adv.requires_grad = False
     
     if inner_max in ['madry', 'cat_paper']:
         if fosc:
             grad = gradient_wrt_data(model, x_adv, lbl, nn.CrossEntropyLoss(reduction='sum'))
             grad_flatten = grad.view(grad.shape[0], -1)
             grad_norm = torch.norm(grad_flatten, 1, dim=1)
-            diff = (x_adv - x_nat).view(x_nat.shape[0], -1)
+            diff = (x_adv.clone().detach() - x_nat).view(x_nat.shape[0], -1)
             fosc_value = eps * grad_norm - (grad_flatten * diff).sum(dim=1)
             model.train(mode)
             return x_adv.clone().detach(), fosc_value
