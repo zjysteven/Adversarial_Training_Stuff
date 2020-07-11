@@ -137,6 +137,8 @@ def wbox_eval_args(parser):
                        help='Path to the model checkpoint')
     group.add_argument('--subset-num', default=0, type=int, 
                        help='number of samples of the subset, will use the full test set if zero')
+    group.add_argument('--trainset', action="store_true",
+                       help='use train samples or test samples')
     group.add_argument('--random-start', default=1, type=int, 
                        help='number of random starts for PGD')
     group.add_argument('--steps', default=20, type=int, 
@@ -155,3 +157,36 @@ def wbox_eval_args(parser):
                        help='when saving results, whether use append mode')
     group.add_argument('--convergence-check', action="store_true", 
                        help='whether perform sanity check to make sure the attack converges')
+    group.add_argument('--save-adv', action="store_true",
+                       help='whether save the generated adversarial examples')
+
+
+# FOSC EVALUATION ARGS
+def fosc_on_others_eval_args(parser):
+    group = parser.add_argument_group('FOSC_Evaluation', 'Arguments to configure evaluation of FOSC')
+    group.add_argument('--model-file', default=None, type=str,
+                       help='Path to the model checkpoint')
+    group.add_argument('--data-file', default=None, type=str,
+                       help='Path to the adversarial examples')
+    group.add_argument('--subset-num', default=0, type=int, 
+                       help='number of samples of the subset, will use the full test set if zero')
+    group.add_argument('--save-to-csv', action="store_true",
+                       help='whether save the results to a csv file')
+    group.add_argument('--overwrite', action="store_false", dest="append_out",
+                       help='when saving results, whether use append mode')
+
+
+# FOSC EVALUATION ARGS
+def fosc_eval_args(parser):
+    group = parser.add_argument_group('FOSC_Evaluation', 'Arguments to configure evaluation of FOSC')
+    group.add_argument('--model-file', default=None, type=str,
+                       help='Path to the model checkpoint')
+    group.add_argument('--subset-num', default=0, type=int, 
+                       help='number of samples of the subset, will use the full test set if zero')
+    group.add_argument('--trainset', action="store_true",
+                       help='use train samples or test samples')
+    group.add_argument('--save', action="store_true",
+                       help='whether save the results')
+    group.add_argument('--eps', default=8, type=int)
+    group.add_argument('--alpha', default=2, type=int)
+    group.add_argument('--steps', default=20, type=int)
