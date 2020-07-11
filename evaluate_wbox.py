@@ -1,6 +1,7 @@
 import os, json, argparse, logging, random
 from tqdm import tqdm
 import pandas as pd
+import warnings
 
 import torch
 import torchvision
@@ -16,30 +17,6 @@ import arguments
 import utils
 
 
-class CarliniWagnerLoss(nn.Module):
-    """
-    Carlini-Wagner Loss: objective function #6.
-    Paper: https://arxiv.org/pdf/1608.04644.pdf
-    """
-
-    def __init__(self, conf=50.):
-        super(CarliniWagnerLoss, self).__init__()
-        self.conf = conf
-
-    def forward(self, input, target):
-        """
-        :param input: pre-softmax/logits.
-        :param target: true labels.
-        :return: CW loss value.
-        """
-        num_classes = input.size(1)
-        label_mask = to_one_hot(target, num_classes=num_classes).float()
-        correct_logit = torch.sum(label_mask * input, dim=1)
-        wrong_logit = torch.max((1. - label_mask) * input, dim=1)[0]
-        loss = -F.relu(correct_logit - wrong_logit + self.conf).sum()
-        return loss
-
-
 def get_args():
     parser = argparse.ArgumentParser(description='Evaluation of Models with Advertorch', add_help=True)
     arguments.model_args(parser)
@@ -52,6 +29,8 @@ def get_args():
 def main():
     # get args
     args = get_args()
+    if args.save_adv:
+        assert args.benchmark, 'We only save adversarial examples when benchmarking the robustness'
 
     # set up gpus
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
@@ -60,37 +39,25 @@ def main():
     # load model
     model = utils.setup(args, train=False, model_file=args.model_file)
 
+    total_sample_num = 50000 if args.trainset else 10000
     # get data loaders
     if args.subset_num > 0:
         random.seed(0)
-        subset_idx = random.sample(range(10000), args.subset_num)
-        testloader = utils.get_test_loader(args, batch_size=500, shuffle=False, subset_idx=subset_idx)
+        subset_idx = random.sample(range(total_sample_num), args.subset_num)
+        testloader = utils.get_loader(args, train=args.trainset, batch_size=1000, shuffle=False, subset_idx=subset_idx)
     else:
-        testloader = utils.get_test_loader(args, batch_size=500, shuffle=False)
+        testloader = utils.get_loader(args, train=args.trainset, batch_size=1000, shuffle=False)
 
-    """
-    # BIM
-    test_iter = tqdm(testloader, desc='BIM', leave=False, position=0)
-    BIM = LinfBasicIterativeAttack(
-            ensemble, loss_fn=nn.CrossEntropyLoss(reduction="sum"), eps=0.01, 
-            nb_iter=20, eps_iter=0.01/5, clip_min=0., clip_max=1., targeted=False)
-
-    _, label, pred, advpred = attack_whole_dataset(BIM, test_iter, device="cuda")
-
-    print("Accuracy: {:.2f}%, BIM Accuracy: {:.2f}%".format(
-        100. * (label == pred).sum().item() / len(label),
-        100. * (label == advpred).sum().item() / len(label)))
-    """
-
-    loss_fn = nn.CrossEntropyLoss() if args.loss_fn == 'xent' else CarliniWagnerLoss(conf=args.cw_conf)
+    loss_fn = nn.CrossEntropyLoss() if args.loss_fn == 'xent' else utils.CarliniWagnerLoss(conf=args.cw_conf)
 
     rob = {}
-    rob['sample_num'] = args.subset_num if args.subset_num else 10000
+    rob['sample'] = 'train' if args.trainset else 'test'
+    rob['sample_num'] = args.subset_num if args.subset_num else total_sample_num
     rob['loss_fn'] = 'xent' if args.loss_fn == 'xent' else 'cw_{:.1f}'.format(args.cw_conf)
 
-    if args.save_to_csv:
+    if args.save_to_csv or args.save_adv:
         output_root = args.model_file.replace('state_dicts', 'wbox_results')
-        output_root = output_root.split('.')[0]
+        output_root = output_root.replace('.pth', '')
 
         if not os.path.exists(output_root):
             os.makedirs(output_root)
@@ -140,10 +107,6 @@ def main():
                 100. * correct_or_not.sum().item() / len(label)))
             
             rob[str(steps)] = 100. * correct_or_not.sum().item() / len(label)
-
-            #if rob[str(eps)] < 0.1:
-            #    zero_acc_flag = True
-            #    break
         
         # save to file
         if args.save_to_csv:
@@ -175,7 +138,7 @@ def main():
                 nb_iter=args.steps, eps_iter=alpha, rand_init=True, clip_min=0., clip_max=1.,
                 targeted=False)
                 
-            _, label, pred, advpred = attack_whole_dataset(adversary, test_iter, device="cuda")
+            adv, label, pred, advpred = attack_whole_dataset(adversary, test_iter, device="cuda")
             correct_or_not.append(label == advpred)
             
         correct_or_not = torch.stack(correct_or_not, dim=-1).all(dim=-1)
@@ -191,7 +154,6 @@ def main():
         # save to file
         if args.save_to_csv:
             output = os.path.join(output_root, 'benchmark.csv')
-
             df = pd.DataFrame(rob, index=[0])
             if args.append_out and os.path.isfile(output):
                 with open(output, 'a') as f:
@@ -201,6 +163,23 @@ def main():
                 df.to_csv(output, sep=',', mode='a', header=False, index=False, float_format='%.2f')
             else:
                 df.to_csv(output, sep=',', index=False, float_format='%.2f')
+        
+        if args.save_adv:
+            if args.random_start > 1:
+                warnings.warn('Found multiple random starts, \
+                    only saving the adversarial examples generated in the last round')
+            output = output_root.replace('wbox_results', 'adv_examples')
+            if not os.path.exists(output):
+                os.makedirs(output)
+            filename = '{:s}_{:d}_steps_{:d}.pt'.format(
+                'train' if args.trainset else 'test',
+                adv.shape[0],
+                args.steps
+            )
+            torch.save({
+                'adv_inputs': adv.detach().cpu(), 
+                'labels': label.cpu(),
+            }, os.path.join(output, filename))
     else:
         eps_list = [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07]
 
