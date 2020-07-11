@@ -129,8 +129,8 @@ class Madry():
         for inputs, targets, idx in batch_iter:
             inputs, targets = inputs.cuda(), targets.cuda()
 
-            adv_return = Linf_PGD(self.model.eval() if self.eval_when_attack else self.model, 
-                inputs, targets, **self.attack_cfg, use_amp=self.use_amp, optimizer=self.optimizer,
+            adv_return = Linf_PGD(self.model, inputs, targets, 
+                **self.attack_cfg, use_amp=self.use_amp, optimizer=self.optimizer,
                 fosc=self.save_fosc)
 
             if self.save_fosc:
@@ -139,8 +139,8 @@ class Madry():
             else:
                 adv_inputs = adv_return
             
-            if self.eval_when_attack:
-                self.model.train()
+            #if self.eval_when_attack:
+            #    self.model.train()
 
             outputs = self.model(adv_inputs)
             loss = self.criterion(outputs, targets)

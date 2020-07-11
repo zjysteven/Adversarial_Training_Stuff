@@ -137,7 +137,7 @@ class CAT():
                 self.attack_cfg['alpha'] = self.adapt_alpha*eps_per_sample/self.attack_cfg['steps']
 
             # generate adversarial examples
-            adv_return = Linf_PGD(self.model.eval() if self.eval_when_attack else self.model, inputs, soft_targets if self.label_smoothing else targets, 
+            adv_return = Linf_PGD(self.model, inputs, soft_targets if self.label_smoothing else targets, 
                 eps=eps_per_sample, **self.attack_cfg, 
                 return_mask=False if self.use_distance_for_eps else True, 
                 use_amp=self.use_amp, optimizer=self.optimizer)
@@ -155,13 +155,15 @@ class CAT():
             elif self.attack_cfg['inner_max'] == 'cat_paper':
                 # for those already successful adversarial examples
                 # do not increase eps
+                self.model.eval()
                 outputs = self.model(adv_inputs)
                 _, predicted = outputs.max(1)
                 wrong_idx = ~(predicted.eq(targets))
                 eps_per_sample[wrong_idx] -= self.eta
-
-            if self.eval_when_attack:
                 self.model.train()
+
+            #if self.eval_when_attack:
+            #    self.model.train()
             
             # make sure eps do not exceed max eps
             eps_per_sample = torch.clamp(eps_per_sample, 0., self.max_eps)
@@ -329,8 +331,8 @@ def main():
         subfolder += '_no_ls'
     else:
         subfolder += '_ls_c%d' % args.c
-    if args.eval_when_attack:
-        subfolder += '_eval'
+    #if args.eval_when_attack:
+    #    subfolder += '_eval'
     if args.amp:
         subfolder += '_%s' % args.opt_level
     save_root = os.path.join(save_root, subfolder)

@@ -102,11 +102,10 @@ class Fast():
         for inputs, targets, idx in batch_iter:
             inputs, targets = inputs.cuda(), targets.cuda()
 
-            adv_inputs = Linf_PGD(self.model.eval() if self.eval_when_attack else self.model, 
-                inputs, targets, **self.attack_cfg, use_amp=self.use_amp)
+            adv_inputs = Linf_PGD(self.model, inputs, targets, **self.attack_cfg, use_amp=self.use_amp)
             
-            if self.eval_when_attack:
-                self.model.train()
+            #if self.eval_when_attack:
+            #    self.model.train()
                     
             outputs = self.model(adv_inputs)
             loss = self.criterion(outputs, targets)
@@ -239,8 +238,8 @@ def main():
     if args.lr_sch == 'cyclic':
         subfolder += '_{:.1f}'.format(args.lr_max)
     subfolder += '_alpha_%d' % args.alpha
-    if args.eval_when_attack:
-        subfolder += '_eval'
+    #if args.eval_when_attack:
+    #    subfolder += '_eval'
     if args.amp:
         subfolder += '_%s' % args.opt_level
 

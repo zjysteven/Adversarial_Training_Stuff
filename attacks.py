@@ -30,6 +30,10 @@ def Linf_PGD(model, dat, lbl, eps, alpha, steps,
     assert type(eps) == type(alpha), 'eps and alpha type should match'
     assert isinstance(eps, float) or isinstance(eps, torch.Tensor), 'eps type is not valid'
     
+    # set to eval mode, but also record the initial mode for future recover
+    mode = model.training
+    model.eval()
+
     x_nat = dat.clone().detach()
     x_adv = None
     
@@ -71,15 +75,12 @@ def Linf_PGD(model, dat, lbl, eps, alpha, steps,
     
     if inner_max in ['madry', 'cat_paper']:
         if fosc:
-            # https://github.com/YisenWang/dynamic_adv_training/blob/master/pgd_attack.py
-            # set loss reduction to sum, otherwise the fosc value is too small
-            grad = gradient_wrt_data(model, x_adv, lbl, nn.CrossEntropyLoss(reduction='sum'), use_amp=False)
-            grad_flatten = grad.view(grad.shape[0], -1)
-            grad_norm = torch.norm(grad_flatten, 1, dim=1)
-            diff = (x_adv.clone().detach() - x_nat).view(x_nat.shape[0], -1)
-            fosc_value = eps * grad_norm - (grad_flatten * diff).sum(dim=1)
+            fosc_value = calc_fosc(x_adv, x_nat, lbl)
+            model.train(mode)
             return x_adv.clone().detach(), fosc_value
-        return x_adv.clone().detach()
+        else:
+            model.train(mode)
+            return x_adv.clone().detach()
     elif inner_max == 'cat_code':
         if len(lbl.shape) == 2:
             mask = (torch.max(model(x_adv),dim=1)[1] == torch.max(lbl,dim=1)[1])
@@ -88,6 +89,20 @@ def Linf_PGD(model, dat, lbl, eps, alpha, steps,
         if mask is None: # does this really do anything?
             return x_nat
         x_nat.data[mask] = x_adv.data[mask]
+        model.train(mode)
         if return_mask:
             return x_nat, mask
         return x_nat
+
+
+def calc_fosc(adv, nat, lbl):
+    # https://github.com/YisenWang/dynamic_adv_training/blob/master/pgd_attack.py
+    x_adv = adv.clone().detach()
+    x_nat = nat.clone().detach()
+    # set loss reduction to sum, otherwise the fosc value is too small
+    grad = gradient_wrt_data(model, x_adv, lbl, nn.CrossEntropyLoss(reduction='sum'))
+    grad_flatten = grad.view(grad.shape[0], -1)
+    grad_norm = torch.norm(grad_flatten, 1, dim=1)
+    diff = (x_adv - x_nat).view(x_nat.shape[0], -1)
+    fosc_value = eps * grad_norm - (grad_flatten * diff).sum(dim=1)
+    return fosc_value
