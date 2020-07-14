@@ -5,8 +5,8 @@ from_minhao
 runs
 wbox_results
 models_from_robustness.py
-*.sh
 *.bundle
 plot*
 train_cat_*
 *minhao*.py
+*on_others*
