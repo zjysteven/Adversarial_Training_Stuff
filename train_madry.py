@@ -49,7 +49,6 @@ class Madry():
         self.save_loss = args.save_loss
         self.save_fosc = args.save_fosc
         self.use_amp = args.amp
-        self.eval_when_attack = args.eval_when_attack
         self.increase_steps = args.increase_steps
         self.increase_eps = args.increase_eps
         if self.increase_steps:
@@ -138,9 +137,6 @@ class Madry():
                 self.fosc[idx] = fosc_val.cpu()
             else:
                 adv_inputs = adv_return
-            
-            #if self.eval_when_attack:
-            #    self.model.train()
 
             outputs = self.model(adv_inputs)
             loss = self.criterion(outputs, targets)
@@ -287,8 +283,6 @@ def main():
         subfolder += '_[%s]@[%s]' % (','.join(str(e) for e in args.more_steps), ','.join(str(e) for e in args.steps_intervals))
     if args.increase_eps:
         subfolder += '_increase_eps'
-    #if args.eval_when_attack:
-    #    subfolder += '_eval'
     if args.amp:
         subfolder += '_%s' % args.opt_level
     save_root = os.path.join(save_root, subfolder)
