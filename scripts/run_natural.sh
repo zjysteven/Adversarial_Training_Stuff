@@ -1,5 +1,5 @@
 # DO NOT CHANGE THIS
-DIR="/home/jz288/cat"
+DIR=".."
 cd $DIR
 
 GPU="3"
