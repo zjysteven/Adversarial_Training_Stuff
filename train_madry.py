@@ -287,8 +287,8 @@ def main():
         subfolder += '_[%s]@[%s]' % (','.join(str(e) for e in args.more_steps), ','.join(str(e) for e in args.steps_intervals))
     if args.increase_eps:
         subfolder += '_increase_eps'
-    if args.eval_when_attack:
-        subfolder += '_eval'
+    #if args.eval_when_attack:
+    #    subfolder += '_eval'
     if args.amp:
         subfolder += '_%s' % args.opt_level
     save_root = os.path.join(save_root, subfolder)
