@@ -47,7 +47,6 @@ class Fast():
         self.save_eps = args.save_eps
         self.save_loss = args.save_loss
         self.use_amp = args.amp
-        self.eval_when_attack = args.eval_when_attack
     
     def prepare_data(self, args):
         transform_train = transforms.Compose([
@@ -103,9 +102,6 @@ class Fast():
             inputs, targets = inputs.cuda(), targets.cuda()
 
             adv_inputs = Linf_PGD(self.model, inputs, targets, **self.attack_cfg, use_amp=self.use_amp)
-            
-            #if self.eval_when_attack:
-            #    self.model.train()
                     
             outputs = self.model(adv_inputs)
             loss = self.criterion(outputs, targets)
@@ -238,8 +234,6 @@ def main():
     if args.lr_sch == 'cyclic':
         subfolder += '_{:.1f}'.format(args.lr_max)
     subfolder += '_alpha_%d' % args.alpha
-    #if args.eval_when_attack:
-    #    subfolder += '_eval'
     if args.amp:
         subfolder += '_%s' % args.opt_level
 

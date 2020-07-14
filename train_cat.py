@@ -61,7 +61,6 @@ class CAT():
         self.label_smoothing = args.label_smoothing
         self.use_distance_for_eps = args.use_distance_for_eps
         self.use_amp = args.amp
-        self.eval_when_attack = args.eval_when_attack
 
     def prepare_data(self, args):
         transform_train = transforms.Compose([
@@ -161,9 +160,6 @@ class CAT():
                 wrong_idx = ~(predicted.eq(targets))
                 eps_per_sample[wrong_idx] -= self.eta
                 self.model.train()
-
-            #if self.eval_when_attack:
-            #    self.model.train()
             
             # make sure eps do not exceed max eps
             eps_per_sample = torch.clamp(eps_per_sample, 0., self.max_eps)
@@ -331,8 +327,6 @@ def main():
         subfolder += '_no_ls'
     else:
         subfolder += '_ls_c%d' % args.c
-    #if args.eval_when_attack:
-    #    subfolder += '_eval'
     if args.amp:
         subfolder += '_%s' % args.opt_level
     save_root = os.path.join(save_root, subfolder)

@@ -51,8 +51,6 @@ def base_train_args(parser):
                        help='whether save the loss value for each sample per epoch')
     group.add_argument('--donot-save-fosc', action="store_false", dest='save_fosc',
                        help='whether save the fosc value for each sample per epoch')
-    #group.add_argument('--eval-when-attack', action='store_true',
-    #                   help='whether set model to eval mode when generating adv examples')
     group.add_argument('--amp', action='store_true',
                        help='whether use automatic mixed precision from Apex')
 
