@@ -51,6 +51,7 @@ class Madry():
         self.use_amp = args.amp
         self.increase_steps = args.increase_steps
         self.increase_eps = args.increase_eps
+        self.linear_eps = args.linear_eps
         if self.increase_steps:
             assert len(args.more_steps) > 0
             assert len(args.more_steps) == len(args.steps_intervals)
@@ -61,6 +62,8 @@ class Madry():
             assert len(args.more_eps) == len(args.eps_intervals)
             self.more_eps = np.array(args.more_eps)
             self.eps_intervals = np.array(args.eps_intervals)
+        if self.linear_eps:
+            self.eps_list = np.linspace(0, args.eps, args.epochs)
 
     def prepare_data(self, args):
         transform_train = transforms.Compose([
@@ -123,6 +126,9 @@ class Madry():
                 current_eps = self.more_eps[current_eps_idx][-1]
                 self.attack_cfg['eps'] = float(current_eps / 255.)
         
+        if self.linear_eps:
+            self.attack_cfg['eps'] = float(self.eps_list[epoch-1] / 255.)
+        
         correct = 0
         batch_iter = self.get_batch_iterator()
         for inputs, targets, idx in batch_iter:
@@ -167,7 +173,7 @@ class Madry():
         self.writer.add_scalar('train/adv_acc', correct/len(self.trainset), epoch)
         self.writer.add_scalar('lr', current_lr, epoch)
         self.writer.add_scalar('steps', self.attack_cfg['steps'], epoch)
-        self.writer.add_scalar('eps', int(self.attack_cfg['eps']*255), epoch)
+        self.writer.add_scalar('eps', self.attack_cfg['eps']*255, epoch)
 
     def test(self, epoch):
         self.model.eval()
@@ -283,6 +289,8 @@ def main():
         subfolder += '_[%s]@[%s]' % (','.join(str(e) for e in args.more_steps), ','.join(str(e) for e in args.steps_intervals))
     if args.increase_eps:
         subfolder += '_increase_eps'
+    if args.linear_eps:
+        subfolder += '_linear_eps'
     if args.amp:
         subfolder += '_%s' % args.opt_level
     save_root = os.path.join(save_root, subfolder)

@@ -88,6 +88,8 @@ def madry_advt_args(parser):
                        help='other numbers of steps that would be used to generate adv examples')
     group.add_argument('--eps-intervals', nargs='*', default=[], type=int,
                        help='the timespot to change the number of steps')
+    group.add_argument('--linear-eps', action='store_true',
+                       help='linearly increase eps from 0 to args.eps during the training')
 
 
 # CUSTOMIZED ADVERSARIAL TRAINING ARGS
