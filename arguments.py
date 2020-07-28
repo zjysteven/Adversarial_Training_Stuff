@@ -130,15 +130,19 @@ def fast_advt_args(parser):
                        help='step size for adversarial training')
 
 
-# WBOX EVALUATION ARGS
-def wbox_eval_args(parser):
-    group = parser.add_argument_group('White-box_Evaluation', 'Arguments to configure evaluation of white-box robustness')
+def base_eval_args(parser):
+    group = parser.add_argument_group('Base evaluation', 'Arguments for some common evaluation args')
     group.add_argument('--model-file', default=None, type=str,
                        help='Path to the model checkpoint')
     group.add_argument('--subset-num', default=0, type=int, 
                        help='number of samples of the subset, will use the full test set if zero')
     group.add_argument('--trainset', action="store_true",
                        help='use train samples or test samples')
+
+
+# WBOX EVALUATION ARGS
+def wbox_eval_args(parser):
+    group = parser.add_argument_group('White-box_Evaluation', 'Arguments to configure evaluation of white-box robustness')
     group.add_argument('--random-start', default=1, type=int, 
                        help='number of random starts for PGD')
     group.add_argument('--steps', default=20, type=int, 
@@ -179,14 +183,24 @@ def fosc_on_others_eval_args(parser):
 # FOSC EVALUATION ARGS
 def fosc_eval_args(parser):
     group = parser.add_argument_group('FOSC_Evaluation', 'Arguments to configure evaluation of FOSC')
-    group.add_argument('--model-file', default=None, type=str,
-                       help='Path to the model checkpoint')
-    group.add_argument('--subset-num', default=0, type=int, 
-                       help='number of samples of the subset, will use the full test set if zero')
-    group.add_argument('--trainset', action="store_true",
-                       help='use train samples or test samples')
     group.add_argument('--save', action="store_true",
                        help='whether save the results')
     group.add_argument('--eps', default=8, type=int)
     group.add_argument('--alpha', default=2, type=int)
     group.add_argument('--steps', default=20, type=int)
+
+
+# EXPLORATION
+def explore_args(parser):
+    group = parser.add_argument_group('Explore', 'Arguments for some pilot experiments')
+    group.add_argument('--save', action="store_true",
+                       help='whether save the results')
+    group.add_argument('--eps', default=8, type=int)
+    group.add_argument('--alpha', default=1, type=int)
+    group.add_argument('--steps', default=20, type=int)
+    group.add_argument('--loss-fn', default='xent', type=str, choices=['xent', 'cw'],
+                       help='which loss function to use')
+    group.add_argument('--cw-conf', default=50., type=float,
+                       help='confidence for cw loss function')
+    group.add_argument('--random-start', default=1, type=int, 
+                       help='number of random starts for PGD')

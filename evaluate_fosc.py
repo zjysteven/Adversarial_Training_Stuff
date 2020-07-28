@@ -23,6 +23,7 @@ def get_args():
     parser = argparse.ArgumentParser(description='Evaluation of Models with Advertorch', add_help=True)
     arguments.model_args(parser)
     arguments.data_args(parser)
+    arguments.base_eval_args(parser)
     arguments.fosc_eval_args(parser)
     args = parser.parse_args()
     return args
@@ -61,15 +62,20 @@ def main():
     losses = torch.zeros(size)
     confs = torch.zeros((size[0], size[1]+1))
 
-    gnorm = torch.zeros(size)
+    gnorm = torch.zeros((size[0], size[1]+1))
     tensor_norm = torch.zeros(size)
     cossim = torch.zeros(size)
 
     total = 0
-    correct = 0
-    adv_correct = [0 for _ in range(steps)]
+    correct = torch.zeros((args.subset_num if args.subset_num > 0 else total_sample_num,))
+    adv_correct = torch.zeros(size)
     criterion = nn.CrossEntropyLoss(reduction='none')
     cos = nn.CosineSimilarity(dim=1)
+
+    perturbation = torch.zeros(
+        (args.steps, args.subset_num if args.subset_num > 0 else total_sample_num, 
+            3, 32, 32)
+    )
 
     for inp, lbl in tqdm(testloader, desc='Batch', leave=False, position=0):
         inp, lbl = inp.cuda(), lbl.cuda()
@@ -79,7 +85,7 @@ def main():
             outputs = model(inp)
             probs = F.softmax(outputs, dim=-1)
             _, preds = probs.max(1)
-            correct += preds.eq(lbl).sum().item()
+            correct[total:total+inp.shape[0]] = preds.eq(lbl).float().cpu()
             confs[total:total+inp.shape[0], 0] = torch.gather(probs, 1, lbl.view(-1, 1)).detach().view(-1).cpu()
 
         x_nat = inp.clone().detach()
@@ -101,11 +107,16 @@ def main():
             loss.sum().backward()
             grad = x_adv.grad.data
 
+            if i == 0:
+                grad_flatten = grad.view(grad.shape[0], -1)
+                grad_norm_l2 = torch.norm(grad_flatten, 2, dim=1)
+                gnorm[total:total+inp.shape[0], 0] = grad_norm_l2.cpu()
+
             if i > 0:
                 # record correct and confidence
                 probs = F.softmax(outputs, dim=-1)
                 _, preds = probs.max(1)
-                adv_correct[i-1] += preds.eq(lbl).sum().item()
+                adv_correct[total:total+inp.shape[0], i-1] = preds.eq(lbl).float().cpu()
                 confs[total:total+inp.shape[0], i] = torch.gather(probs, 1, lbl.view(-1, 1)).detach().view(-1).cpu()           
 
                 # record loss
@@ -126,7 +137,7 @@ def main():
                 fosc_value_ = tensor_norm_l2 * grad_norm_l2 * cosine
                 assert torch.all(torch.abs(fosc_value_ - fosc_value) < 1e-4)
 
-                gnorm[total:total+inp.shape[0], i-1] = grad_norm_l2.cpu()
+                gnorm[total:total+inp.shape[0], i] = grad_norm_l2.cpu()
                 tensor_norm[total:total+inp.shape[0], i-1] = tensor_norm_l2.cpu()
                 cossim[total:total+inp.shape[0], i-1] = cosine.cpu()
                 
@@ -135,6 +146,8 @@ def main():
                 x_adv = x_adv + alpha * sign_data_grad
                 x_adv = torch.max(torch.min(x_adv, x_nat+eps), x_nat-eps)
                 x_adv = torch.clamp(x_adv, 0., 1.)
+            
+            perturbation[i, total:total+inp.shape[0], :] = (x_adv.detach() - inp).cpu()
 
         # record statistics for the final x_adv
         x_adv.requires_grad = True
@@ -148,7 +161,7 @@ def main():
         # record correct and confidence
         probs = F.softmax(outputs, dim=-1)
         _, preds = probs.max(1)
-        adv_correct[-1] += preds.eq(lbl).sum().item()
+        adv_correct[total:total+inp.shape[0], -1] = preds.eq(lbl).float().cpu()
         confs[total:total+inp.shape[0], -1] = torch.gather(probs, 1, lbl.view(-1, 1)).detach().view(-1).cpu()              
 
         # record loss
@@ -173,30 +186,33 @@ def main():
         tensor_norm[total:total+inp.shape[0], -1] = tensor_norm_l2.cpu()
         cossim[total:total+inp.shape[0], -1] = cosine.cpu()
 
+        perturbation[-1, total:total+inp.shape[0], :] = (x_adv.detach() - inp).cpu()
+
         total += inp.shape[0]
     
     assert total == size[0]
 
     to_print = np.zeros((7, steps))
-    to_print[0] = np.array([100.*x/total for x in adv_correct])
+    to_print[0] = np.array([100.*x/total for x in adv_correct.sum(dim=0).cpu().numpy()])
     to_print[1] = confs.mean(dim=0).numpy()[1:]
     to_print[2] = losses.mean(dim=0).numpy()
     to_print[3] = fosc.mean(dim=0).numpy()
-    to_print[4] = gnorm.mean(dim=0).numpy()
+    to_print[4] = gnorm.mean(dim=0).numpy()[1:]
     to_print[5] = tensor_norm.mean(dim=0).numpy()
     to_print[6] = cossim.mean(dim=0).numpy()
     np.set_printoptions(suppress=True,
         formatter={'float_kind':'{:2.3f}'.format}, linewidth=130)
 
     print('Model:\t%s'%args.model_file)
-    print('Clean acc: {:.2%}'.format(correct/total))
+    print('Clean acc: {:.2%}'.format(correct.sum().item()/total))
     pprint(to_print)
     print('\n')
 
     if args.save:
-        robustness = [100.*correct/total]
-        robustness.extend([100.*x/total for x in adv_correct])
-        assert len(robustness) == args.steps + 1
+        #robustness = [100.*correct/total]
+        #robustness.extend([100.*x/total for x in adv_correct])
+        robustness = torch.cat((correct.view(-1,1), adv_correct), dim=-1)
+        assert robustness.shape[1] == args.steps + 1
 
         # save results
         save_root = args.model_file.replace('state_dicts', 'fosc_eval')
@@ -216,10 +232,11 @@ def main():
         save_fn(base_filename+'_conf', confs.numpy())
         save_fn(base_filename+'_loss', losses.numpy())
         save_fn(base_filename+'_fosc', fosc.numpy())
-        save_fn(base_filename+'_acc', np.array(robustness))
+        save_fn(base_filename+'_acc', robustness.numpy())
         save_fn(base_filename+'_grad_norm', gnorm.numpy())
         save_fn(base_filename+'_tensor_norm', tensor_norm.numpy())
         save_fn(base_filename+'_cossim', cossim.numpy())
+        save_fn(base_filename+'_perturbation', perturbation.numpy())
 
 
 if __name__ == '__main__':
