@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader, Subset
 from torchvision import datasets, transforms
 from torchvision.datasets import CIFAR10
 
-from advertorch.utils import NormalizeByChannelMeanStd
+from advertorch.utils import NormalizeByChannelMeanStd, to_one_hot
 from models.wrn import WideResNet
 import models.resnet_imagenet as resnet_imagenet
 import models.resnet_cifar as resnet_cifar
@@ -227,9 +227,10 @@ class CarliniWagnerLoss(nn.Module):
     Paper: https://arxiv.org/pdf/1608.04644.pdf
     """
 
-    def __init__(self, conf=50.):
+    def __init__(self, conf=50., reduction="sum"):
         super(CarliniWagnerLoss, self).__init__()
         self.conf = conf
+        self.reduction = reduction
 
     def forward(self, input, target):
         """
@@ -241,9 +242,16 @@ class CarliniWagnerLoss(nn.Module):
         label_mask = to_one_hot(target, num_classes=num_classes).float()
         correct_logit = torch.sum(label_mask * input, dim=1)
         wrong_logit = torch.max((1. - label_mask) * input, dim=1)[0]
-        loss = -F.relu(correct_logit - wrong_logit + self.conf).sum()
-        return loss
+        loss = -F.relu(correct_logit - wrong_logit + self.conf)
 
+        if self.reduction == "mean":
+            return torch.mean(loss)
+        elif self.reduction == "sum":
+            return torch.sum(loss)
+        elif self.reduction == "none":
+            return loss
+        else:
+            raise ValueError("Reduction type '{:s}' is not supported!".format(self.reduction))
 
 
 if __name__ == '__main__':

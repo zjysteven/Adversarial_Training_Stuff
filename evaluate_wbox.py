@@ -11,7 +11,6 @@ from torch.utils.tensorboard import SummaryWriter
 
 from advertorch.attacks import GradientSignAttack, LinfBasicIterativeAttack, LinfPGDAttack
 from advertorch.attacks.utils import multiple_mini_batch_attack, attack_whole_dataset
-from advertorch.utils import to_one_hot
 
 import arguments
 import utils
