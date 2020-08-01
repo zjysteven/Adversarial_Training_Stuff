@@ -44,10 +44,17 @@ class Madry():
 
         self.eps = torch.zeros((len(self.trainset), 3, 32, 32))
         self.loss = torch.zeros((len(self.trainset)))
+        self.correct = torch.zeros((len(self.trainset)))
         self.fosc = torch.zeros((len(self.trainset)))
+        self.minus_delta_loss = torch.zeros((len(self.trainset), 2))
+        self.minus_delta_correct = torch.zeros((len(self.trainset), 2))
+
         self.save_eps = args.save_eps
         self.save_loss = args.save_loss
         self.save_fosc = args.save_fosc
+        self.save_correct = args.save_correct
+        self.save_minus_delta = args.save_minus_delta
+
         self.use_amp = args.amp
         self.increase_steps = args.increase_steps
         self.increase_eps = args.increase_eps
@@ -110,7 +117,6 @@ class Madry():
 
     def train(self, epoch):
         self.model.train()
-        losses = 0
 
         current_lr = self.scheduler.get_last_lr()[0]
 
@@ -129,7 +135,9 @@ class Madry():
         if self.linear_eps:
             self.attack_cfg['eps'] = float(self.eps_list[epoch-1] / 255.)
         
+        losses = 0
         correct = 0
+
         batch_iter = self.get_batch_iterator()
         for inputs, targets, idx in batch_iter:
             inputs, targets = inputs.cuda(), targets.cuda()
@@ -144,6 +152,15 @@ class Madry():
             else:
                 adv_inputs = adv_return
 
+            if self.save_minus_delta:
+                self.model.eval()
+                outputs = self.model(2*inputs-adv_inputs)
+                _, preds = outputs.max(1)
+                loss = self.criterion(outputs, targets)
+                self.minus_delta_loss[idx, 0] = loss.detach().cpu()
+                self.minus_delta_correct[idx, 0] = preds.eq(targets).float().cpu()
+                self.model.train()
+
             outputs = self.model(adv_inputs)
             loss = self.criterion(outputs, targets)
             if self.save_loss:
@@ -153,6 +170,8 @@ class Madry():
 
             _, predicted = outputs.max(1)
             correct += predicted.eq(targets).sum().item()
+            if self.save_correct:
+                self.correct[idx] = predicted.eq(targets).float().cpu()
 
             self.optimizer.zero_grad()
             if self.use_amp:
@@ -164,9 +183,24 @@ class Madry():
             self.scheduler.step()
 
             if self.save_eps:
-                self.eps[idx] = (adv_inputs-inputs).cpu()          
+                self.eps[idx] = (adv_inputs-inputs).cpu()
 
-        print_message = 'Epoch [{:3d}] | Adv Loss: {:.4f}, Adv Acc: {:.2%}'.format(epoch, losses/len(batch_iter), correct/len(self.trainset))
+            if self.save_minus_delta:
+                self.model.eval()
+                outputs = self.model(2*inputs-adv_inputs)
+                _, preds = outputs.max(1)
+                loss = self.criterion(outputs, targets)
+                self.minus_delta_loss[idx, 1] = loss.detach().cpu()
+                self.minus_delta_correct[idx, 1] = preds.eq(targets).float().cpu()
+                self.model.train()          
+
+        if self.save_minus_delta:
+            print_message = 'Epoch [{:3d}] | Adv Loss: {:.4f}, Adv Acc: {:.2%}, Minus delta loss: {:.4f} / {:.4f}, Minus delta acc: {:.2%} / {:.2%}'.format(
+                epoch, losses/len(batch_iter), correct/len(self.trainset), 
+                self.minus_delta_loss[:,0].mean(), self.minus_delta_loss[:,1].mean(),
+                self.minus_delta_correct[:,0].mean(), self.minus_delta_correct[:,1].mean())
+        else:
+            print_message = 'Epoch [{:3d}] | Adv Loss: {:.4f}, Adv Acc: {:.2%}'.format(epoch, losses/len(batch_iter), correct/len(self.trainset))
         tqdm.write(print_message)
 
         self.writer.add_scalar('train/adv_loss', losses/len(batch_iter), epoch)
@@ -256,7 +290,13 @@ class Madry():
 
         if self.save_fosc:
             self._save('fosc', epoch)
-
+        
+        if self.save_minus_delta:
+            self._save('minus_delta_loss', epoch)
+            self._save('minus_delta_correct', epoch)
+        
+        if self.save_correct:
+            self._save('correct', epoch)
 
 
 def get_args():

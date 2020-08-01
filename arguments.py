@@ -1,15 +1,15 @@
 # MODEL OPTS
 def model_args(parser):
     group = parser.add_argument_group('Model', 'Arguments control Model')
-    group.add_argument('--arch', default='wrn', type=str, choices=['wrn', 'resnet', 'pre_resnet'],
+    group.add_argument('--arch', default='pre_resnet', type=str, choices=['wrn', 'resnet', 'pre_resnet'],
                        help='model architecture')
-    group.add_argument('--depth', default=16, type=int, 
+    group.add_argument('--depth', default=18, type=int, 
                        help='depth of the model')
     group.add_argument('--width', default=10, type=int, 
                        help='widen factor for WideResNet')
     group.add_argument('--gpu', default='0,1', type=str, 
                        help='gpu id')
-    group.add_argument('--seed', default=233, type=int,
+    group.add_argument('--seed', default=0, type=int,
                        help='random seed')
 
 
@@ -51,6 +51,10 @@ def base_train_args(parser):
                        help='whether save the loss value for each sample per epoch')
     group.add_argument('--donot-save-fosc', action="store_false", dest='save_fosc',
                        help='whether save the fosc value for each sample per epoch')
+    group.add_argument('--donot-save-minus-delta', action="store_false", dest='save_minus_delta',
+                       help='whether save the statistics for x - delta')
+    group.add_argument('--donot-save-correct', action="store_false", dest='save_correct',
+                       help='whether save the per sample correctness for x_adv')
     group.add_argument('--amp', action='store_true',
                        help='whether use automatic mixed precision from Apex')
 
