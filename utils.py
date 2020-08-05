@@ -141,14 +141,21 @@ def get_train_loaders(args):
     return trainloader, testloader
 
 
-def get_loader(args, train=False, batch_size=100, shuffle=False, subset_idx=None):
+def get_loader(args, train=False, batch_size=100, shuffle=False, subset_idx=None, augmentation=False):
     kwargs = {'num_workers': 4,
               'batch_size': batch_size,
               'shuffle': shuffle,
               'pin_memory': True}
-    transform_test = transforms.Compose([
-        transforms.ToTensor(),
-    ])
+    if augmentation:
+        transform_test = transforms.Compose([
+            transforms.RandomCrop(32, padding=4),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+        ])
+    else:
+        transform_test = transforms.Compose([
+            transforms.ToTensor(),
+        ])
     if subset_idx is not None:
         testset = Subset(datasets.CIFAR10(root=args.data_dir, train=train,
                                 transform=transform_test,
