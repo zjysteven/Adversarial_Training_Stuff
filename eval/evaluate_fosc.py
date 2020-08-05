@@ -1,4 +1,5 @@
-import os, json, argparse, logging, random
+import sys, os, json, argparse, logging, random
+sys.path.append('..')
 from tqdm import tqdm
 import pandas as pd
 import numpy as np
@@ -59,7 +60,7 @@ def main():
 
     size = (args.subset_num if args.subset_num > 0 else total_sample_num, args.steps)
     fosc = torch.zeros(size)
-    losses = torch.zeros(size)
+    losses = torch.zeros((size[0], size[1]+1))
     confs = torch.zeros((size[0], size[1]+1))
 
     gnorm = torch.zeros((size[0], size[1]+1))
@@ -83,6 +84,8 @@ def main():
         # clean correct
         with torch.no_grad():
             outputs = model(inp)
+            loss = criterion(outputs, lbl)
+            losses[total:total+inp.shape[0], 0] = loss.detach().cpu()
             probs = F.softmax(outputs, dim=-1)
             _, preds = probs.max(1)
             correct[total:total+inp.shape[0]] = preds.eq(lbl).float().cpu()
@@ -120,7 +123,7 @@ def main():
                 confs[total:total+inp.shape[0], i] = torch.gather(probs, 1, lbl.view(-1, 1)).detach().view(-1).cpu()           
 
                 # record loss
-                losses[total:total+inp.shape[0], i-1] = loss.detach().cpu()
+                losses[total:total+inp.shape[0], i] = loss.detach().cpu()
 
                 # record fosc
                 grad_flatten = grad.view(grad.shape[0], -1)

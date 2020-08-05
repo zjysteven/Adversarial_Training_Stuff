@@ -1,7 +1,8 @@
-import os, json, argparse, logging, random
-from tqdm import tqdm
+import sys, os, json, argparse, logging, random
+sys.path.append('..')
 import pandas as pd
 import warnings
+from tqdm import tqdm
 
 import torch
 import torchvision
@@ -20,6 +21,7 @@ def get_args():
     parser = argparse.ArgumentParser(description='Evaluation of Models with Advertorch', add_help=True)
     arguments.model_args(parser)
     arguments.data_args(parser)
+    arguments.base_eval_args(parser)
     arguments.wbox_eval_args(parser)
     args = parser.parse_args()
     return args
@@ -45,6 +47,7 @@ def main():
         subset_idx = random.sample(range(total_sample_num), args.subset_num)
         testloader = utils.get_loader(args, train=args.trainset, batch_size=1000, shuffle=False, subset_idx=subset_idx)
     else:
+        #testloader = utils.get_loader(args, train=args.trainset, batch_size=1000, shuffle=False, augmentation=True)
         testloader = utils.get_loader(args, train=args.trainset, batch_size=1000, shuffle=False)
 
     loss_fn = nn.CrossEntropyLoss() if args.loss_fn == 'xent' else utils.CarliniWagnerLoss(conf=args.cw_conf)
