@@ -45,10 +45,10 @@ def main():
     if args.subset_num > 0:
         random.seed(0)
         subset_idx = random.sample(range(total_sample_num), args.subset_num)
-        testloader = utils.get_loader(args, train=args.trainset, batch_size=1000, shuffle=False, subset_idx=subset_idx)
+        testloader = utils.get_loader(args, train=args.trainset, batch_size=args.batch_size, shuffle=False, subset_idx=subset_idx)
     else:
         #testloader = utils.get_loader(args, train=args.trainset, batch_size=1000, shuffle=False, augmentation=True)
-        testloader = utils.get_loader(args, train=args.trainset, batch_size=1000, shuffle=False)
+        testloader = utils.get_loader(args, train=args.trainset, batch_size=args.batch_size, shuffle=False)
 
     loss_fn = nn.CrossEntropyLoss() if args.loss_fn == 'xent' else utils.CarliniWagnerLoss(conf=args.cw_conf)
 
