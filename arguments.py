@@ -46,7 +46,7 @@ def base_train_args(parser):
     group.add_argument('--donot-test-robust', action='store_false', dest='test_robust',
                        help='whether test robust accuracy during the training')
     group.add_argument('--donot-save-eps', action="store_false", dest='save_eps',
-                       help='whether save the epsilon value for each sample per epoch')
+                       help='whether save the epsilon for each sample per epoch')
     group.add_argument('--donot-save-loss', action="store_false", dest='save_loss',
                        help='whether save the loss value for each sample per epoch')
     group.add_argument('--donot-save-fosc', action="store_false", dest='save_fosc',
@@ -57,6 +57,8 @@ def base_train_args(parser):
                        help='whether save the per sample correctness for x_adv')
     group.add_argument('--amp', action='store_true',
                        help='whether use automatic mixed precision from Apex')
+    group.add_argument('--no-data-aug', action='store_false', dest='data_aug',
+                       help='whether or not use data augmentation')
 
 
 # AMP ARGS
@@ -94,6 +96,12 @@ def madry_advt_args(parser):
                        help='the timespot to change the number of steps')
     group.add_argument('--linear-eps', action='store_true',
                        help='linearly increase eps from 0 to args.eps during the training')
+    group.add_argument('--attack-interval', default=1, type=int)
+    group.add_argument('--donot-save-adv', action="store_false", dest='save_adv',
+                       help='whether save the adv counterpart for each sample per epoch')
+    group.add_argument('--input-diversity', action="store_true")
+    group.add_argument('--id-prob', default=0.5, type=float)
+    group.add_argument('--clean-coeff', default=0.0, type=float)
 
 
 # CUSTOMIZED ADVERSARIAL TRAINING ARGS

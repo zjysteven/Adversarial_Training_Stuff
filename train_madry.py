@@ -36,7 +36,9 @@ class Madry():
                            'steps': args.steps,
                            'is_targeted': False,
                            'rand_start': True,
-                           'inner_max': 'madry'
+                           'inner_max': 'madry',
+                           'input_diversity': args.input_diversity,
+                           'prob': args.id_prob
                           }
         
         self.test_robust = args.test_robust
@@ -71,6 +73,8 @@ class Madry():
             self.eps_intervals = np.array(args.eps_intervals)
         if self.linear_eps:
             self.eps_list = np.linspace(0, args.eps, args.epochs)
+        
+        self.clean_coeff = args.clean_coeff
 
     def prepare_data(self, args):
         transform_train = transforms.Compose([
@@ -142,27 +146,39 @@ class Madry():
         for inputs, targets, idx in batch_iter:
             inputs, targets = inputs.cuda(), targets.cuda()
 
-            adv_return = Linf_PGD(self.model, inputs, targets, 
-                **self.attack_cfg, use_amp=self.use_amp, optimizer=self.optimizer,
-                fosc=self.save_fosc)
+            if self.clean_coeff < 1:
+                adv_return = Linf_PGD(self.model, inputs, targets, 
+                    **self.attack_cfg, use_amp=self.use_amp, optimizer=self.optimizer,
+                    fosc=self.save_fosc)
 
-            if self.save_fosc:
-                adv_inputs, fosc_val = adv_return
-                self.fosc[idx] = fosc_val.cpu()
-            else:
-                adv_inputs = adv_return
+                if self.save_fosc:
+                    adv_inputs, fosc_val = adv_return
+                    self.fosc[idx] = fosc_val.cpu()
+                else:
+                    adv_inputs = adv_return
 
-            if self.save_minus_delta:
-                self.model.eval()
-                outputs = self.model(2*inputs-adv_inputs)
-                _, preds = outputs.max(1)
+                if self.save_minus_delta:
+                    self.model.eval()
+                    outputs = self.model(2*inputs-adv_inputs)
+                    _, preds = outputs.max(1)
+                    loss = self.criterion(outputs, targets)
+                    self.minus_delta_loss[idx, 0] = loss.detach().cpu()
+                    self.minus_delta_correct[idx, 0] = preds.eq(targets).float().cpu()
+                    self.model.train()
+
+            if self.clean_coeff > 0 and self.clean_coeff < 1:
+                outputs = self.model(adv_inputs)
+                adv_loss = self.criterion(outputs, targets)
+                clean_loss = self.criterion(self.model(inputs), targets)
+                loss = self.clean_coeff * clean_loss + \
+                    (1 - self.clean_coeff) * adv_loss
+            elif self.clean_coeff == 0:
+                outputs = self.model(adv_inputs)
                 loss = self.criterion(outputs, targets)
-                self.minus_delta_loss[idx, 0] = loss.detach().cpu()
-                self.minus_delta_correct[idx, 0] = preds.eq(targets).float().cpu()
-                self.model.train()
+            elif self.clean_coeff == 1:
+                outputs = self.model(inputs)
+                loss = self.criterion(outputs, targets)
 
-            outputs = self.model(adv_inputs)
-            loss = self.criterion(outputs, targets)
             if self.save_loss:
                 self.loss[idx] = loss.detach().cpu()
             loss = loss.mean()
@@ -192,7 +208,7 @@ class Madry():
                 loss = self.criterion(outputs, targets)
                 self.minus_delta_loss[idx, 1] = loss.detach().cpu()
                 self.minus_delta_correct[idx, 1] = preds.eq(targets).float().cpu()
-                self.model.train()          
+                self.model.train() 
 
         if self.save_minus_delta:
             print_message = 'Epoch [{:3d}] | Adv Loss: {:.4f}, Adv Acc: {:.2%}, Minus delta loss: {:.4f} / {:.4f}, Minus delta acc: {:.2%} / {:.2%}'.format(
@@ -324,13 +340,16 @@ def main():
     subfolder = 'epochs_{:d}_batch_{:d}_lr_{:s}'.format(args.epochs, args.batch_size, args.lr_sch)
     if args.lr_sch == 'cyclic':
         subfolder += '_{:.1f}'.format(args.lr_max)
-    subfolder += '_alpha_%d_steps_%d' % (args.alpha, args.steps)
+    subfolder += '_eps_%d_alpha_%d_steps_%d' % (args.eps, args.alpha, args.steps)
+    subfolder += '_clean_coeff_%.1f' % args.clean_coeff
     if args.increase_steps:
         subfolder += '_[%s]@[%s]' % (','.join(str(e) for e in args.more_steps), ','.join(str(e) for e in args.steps_intervals))
     if args.increase_eps:
         subfolder += '_increase_eps'
     if args.linear_eps:
         subfolder += '_linear_eps'
+    if args.input_diversity:
+        subfolder += '_id_prob_%.1f' % args.id_prob
     if args.amp:
         subfolder += '_%s' % args.opt_level
     save_root = os.path.join(save_root, subfolder)
