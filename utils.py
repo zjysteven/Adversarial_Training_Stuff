@@ -108,10 +108,64 @@ class ModelWrapper(nn.Module):
         super(ModelWrapper, self).__init__()
         self.model = model
         self.normalizer = normalizer
-
+        
     def forward(self, x):
         x = self.normalizer(x)
         return self.model(x)
+
+    
+    # adapted from https://github.com/MadryLab/robustness/blob/master/robustness/model_utils.py
+    def register_layers(self, layer_names):
+        '''
+        Args:
+            layers (list of layer names): list of layer names that are of interest
+        
+        self.layers (dict of layer names and functions): where each function,
+                when applied to submod, returns a desired layer. For example, one
+                element could be `'layer1': lambda model: model.layer1`.
+        '''
+        # layers must be in order
+        layer_dict = {}
+
+        def hook(module, _, output):
+            module.register_buffer('activations', output)
+        
+        for name in layer_names:
+            temp = name.split('.')
+            temp_new = []
+            for i, t in enumerate(temp):
+                if t.isdigit():
+                    temp_new[i-1] += '[%s]' % t
+                else:
+                    temp_new.append(t)
+            name_new = '.'.join(temp_new)
+
+            layer_fn = lambda model: eval('.'.join(('model', name_new)))
+            layer = layer_fn(self.model)
+            
+            layer.register_forward_hook(hook)
+            layer_dict[name] = layer_fn
+        
+        setattr(self, 'layers', layer_dict)
+    
+    """
+    def register_layers(self, layers):
+        setattr(self, 'layers', layers)
+
+        for layer_func in layers:
+            layer = layer_func(self.model)
+            def hook(module, _, output):
+                module.register_buffer('activations', output)
+
+            layer.register_forward_hook(hook)
+    """
+    def extract_features(self, inp):        
+        x = self.normalizer(inp)
+        out = self.model(x)
+        activs = {layer_name: layer_fn(self.model).activations for layer_name, layer_fn in self.layers.items()}
+        #activs = [layer_fn(self.model).activations for layer_fn in self.layers]
+        activs['output'] = out
+        return activs
 
 
 ###################################
@@ -122,11 +176,16 @@ def get_train_loaders(args):
               'batch_size': args.batch_size,
               'shuffle': True,
               'pin_memory': True}
-    transform_train = transforms.Compose([
-        transforms.RandomCrop(32, padding=4),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-    ])
+    if args.data_aug:
+        transform_train = transforms.Compose([
+            transforms.RandomCrop(32, padding=4),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+        ])
+    else:
+        transform_train = transforms.Compose([
+            transforms.ToTensor(),
+        ])
     transform_test = transforms.Compose([
         transforms.ToTensor(),
     ])
