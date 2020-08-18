@@ -16,7 +16,7 @@ def model_args(parser):
 # DATALOADING OPTS
 def data_args(parser):
     group = parser.add_argument_group('Data', 'Arguments control Data and loading for training')
-    group.add_argument('--data-dir', type=str, default='./data',
+    group.add_argument('--data-dir', type=str, default='../data',
                        help='Dataset directory')
     group.add_argument('--batch-size', type=int, default=128,
                        help='batch size of the train loader')
