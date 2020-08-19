@@ -1,5 +1,5 @@
 import sys, os, json, argparse, logging, random
-sys.path.append('..')
+sys.path.append(os.getcwd())
 import pandas as pd
 import warnings
 from tqdm import tqdm
