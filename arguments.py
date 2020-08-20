@@ -16,7 +16,7 @@ def model_args(parser):
 # DATALOADING OPTS
 def data_args(parser):
     group = parser.add_argument_group('Data', 'Arguments control Data and loading for training')
-    group.add_argument('--data-dir', type=str, default='../data',
+    group.add_argument('--data-dir', type=str, default='./data',
                        help='Dataset directory')
     group.add_argument('--batch-size', type=int, default=128,
                        help='batch size of the train loader')
@@ -102,6 +102,20 @@ def madry_advt_args(parser):
     group.add_argument('--input-diversity', action="store_true")
     group.add_argument('--id-prob', default=0.5, type=float)
     group.add_argument('--clean-coeff', default=0.0, type=float)
+
+
+# TRADES ARGS
+# https://arxiv.org/pdf/1901.08573.pdf
+def trades_args(parser):
+    group = parser.add_argument_group('TRADES', 'Arguments to configure TRADES adversarial training')
+    group.add_argument('--eps', default=8, type=int, 
+                       help='perturbation budget for adversarial training')
+    group.add_argument('--alpha', default=2, type=int, 
+                       help='step size for adversarial training')
+    group.add_argument('--steps', default=10, type=int, 
+                       help='number of steps for adversarial training')
+    group.add_argument('--beta', default=6.0, type=float,
+                       help='the hyperparameter for balancing the clean and adv loss')
 
 
 # CUSTOMIZED ADVERSARIAL TRAINING ARGS
