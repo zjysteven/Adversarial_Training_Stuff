@@ -79,11 +79,14 @@ class Madry():
         self.clean_coeff = args.clean_coeff
 
     def prepare_data(self, args):
-        transform_train = transforms.Compose([
+        t = [
             transforms.RandomCrop(32, padding=4),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor()
-        ])
+        ]
+        if args.cutout:
+            t.append(utils.Cutout(n_holes=args.cutout_n_holes, length=args.cutout_length))
+        transform_train = transforms.Compose(t)
         transform_test = transforms.Compose([
             transforms.ToTensor(),
         ])
@@ -343,7 +346,8 @@ def main():
     if args.lr_sch == 'cyclic':
         subfolder += '_{:.1f}'.format(args.lr_max)
     subfolder += '_eps_%d_alpha_%d_steps_%d' % (args.eps, args.alpha, args.steps)
-    subfolder += '_clean_coeff_%.1f' % args.clean_coeff
+    if args.clean_coeff > 0:
+        subfolder += '_clean_coeff_%.1f' % args.clean_coeff
     if args.increase_steps:
         subfolder += '_[%s]@[%s]' % (','.join(str(e) for e in args.more_steps), ','.join(str(e) for e in args.steps_intervals))
     if args.increase_eps:
@@ -352,6 +356,8 @@ def main():
         subfolder += '_linear_eps'
     if args.input_diversity:
         subfolder += '_id_prob_%.1f' % args.id_prob
+    if args.cutout:
+        subfolder += '_cutout_%d_%d' % (args.cutout_n_holes, args.cutout_length)
     if args.amp:
         subfolder += '_%s' % args.opt_level
     save_root = os.path.join(save_root, subfolder)
@@ -373,6 +379,7 @@ def main():
     # set up random seed
     torch.manual_seed(args.seed)
     random.seed(args.seed)
+    np.random.seed(args.seed)
 
     # initialize model, optimizer, and scheduler
     model, optimizer, scheduler = utils.setup(args, train=True)

@@ -1,6 +1,7 @@
-import os, random
+import os, random, copy
 from PIL import Image
 from collections import OrderedDict
+import numpy as np
 try:
     from apex import amp
 except ModuleNotFoundError:
@@ -130,7 +131,8 @@ class ModelWrapper(nn.Module):
 
         def hook(module, _, output):
             module.register_buffer('activations', output)
-        
+            
+        last_name = None
         for name in layer_names:
             temp = name.split('.')
             temp_new = []
@@ -141,12 +143,12 @@ class ModelWrapper(nn.Module):
                     temp_new.append(t)
             name_new = '.'.join(temp_new)
 
-            layer_fn = lambda model: eval('.'.join(('model', name_new)))
-            layer = layer_fn(self.model)
+            layer_fn = lambda model, new_name: eval('.'.join(('model', new_name)))
+            layer = layer_fn(self.model, name_new)
             
             layer.register_forward_hook(hook)
-            layer_dict[name] = layer_fn
-        
+            layer_dict[name_new] = layer_fn
+            
         setattr(self, 'layers', layer_dict)
     
     """
@@ -163,7 +165,7 @@ class ModelWrapper(nn.Module):
     def extract_features(self, inp):        
         x = self.normalizer(inp)
         out = self.model(x)
-        activs = {layer_name: layer_fn(self.model).activations for layer_name, layer_fn in self.layers.items()}
+        activs = {layer_name: layer_fn(self.model, layer_name).activations for layer_name, layer_fn in self.layers.items()}
         #activs = [layer_fn(self.model).activations for layer_fn in self.layers]
         activs['output'] = out
         return activs
@@ -258,6 +260,46 @@ class CIFAR10_with_idx(CIFAR10):
             target = self.target_transform(target)
 
         return img, target, index
+
+
+class Cutout(object):
+    """Randomly mask out one or more patches from an image.
+    Args:
+        n_holes (int): Number of patches to cut out of each image.
+        length (int): The length (in pixels) of each square patch.
+    """
+    def __init__(self, n_holes, length):
+        self.n_holes = n_holes
+        self.length = length
+
+    def __call__(self, img):
+        """
+        Args:
+            img (Tensor): Tensor image of size (C, H, W).
+        Returns:
+            Tensor: Image with n_holes of dimension length x length cut out of it.
+        """
+        h = img.size(1)
+        w = img.size(2)
+
+        mask = np.ones((h, w), np.float32)
+
+        for n in range(self.n_holes):
+            y = np.random.randint(h)
+            x = np.random.randint(w)
+
+            y1 = np.clip(y - self.length // 2, 0, h)
+            y2 = np.clip(y + self.length // 2, 0, h)
+            x1 = np.clip(x - self.length // 2, 0, w)
+            x2 = np.clip(x + self.length // 2, 0, w)
+
+            mask[y1: y2, x1: x2] = 0.
+
+        mask = torch.from_numpy(mask)
+        mask = mask.expand_as(img)
+        img = img * mask
+
+        return img
 
 
 def Linf_distance(x_adv, x):

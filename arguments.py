@@ -59,6 +59,9 @@ def base_train_args(parser):
                        help='whether use automatic mixed precision from Apex')
     group.add_argument('--no-data-aug', action='store_false', dest='data_aug',
                        help='whether or not use data augmentation')
+    group.add_argument('--cutout', action='store_true')
+    group.add_argument('--cutout-n-holes', default=1, type=int)
+    group.add_argument('--cutout-length', default=16, type=int)
 
 
 # AMP ARGS
