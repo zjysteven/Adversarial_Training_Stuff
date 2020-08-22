@@ -12,7 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader, Subset
-from torchvision import datasets, transforms
+from torchvision import datasets, transforms, models
 from torchvision.datasets import CIFAR10
 
 from advertorch.utils import NormalizeByChannelMeanStd, to_one_hot
@@ -26,23 +26,34 @@ import models.resnet_cifar as resnet_cifar
 ######################################
 def setup(args, train=True, model_file=None):
     # initialize model
-    if args.arch == 'wrn':
-        model = WideResNet(depth=args.depth, widen_factor=args.width)
-    elif args.arch == 'resnet':
-        if args.depth in [18, 34, 50, 101, 152]:
-            model = resnet_imagenet.resnet(depth=args.depth)
-        elif args.depth in [20, 32]:
-            model = resnet_cifar.resnet(depth=args.depth)
+    if args.dataset == 'cifar10':
+        if args.arch == 'wrn':
+            model = WideResNet(depth=args.depth, widen_factor=args.width)
+        elif args.arch == 'resnet':
+            if args.depth in [18, 34, 50, 101, 152]:
+                model = resnet_imagenet.resnet(depth=args.depth)
+            elif args.depth in [20, 32]:
+                model = resnet_cifar.resnet(depth=args.depth)
+            else:
+                raise ValueError('Depth %d is not valid for ResNet...' % args.depth)
+        elif args.arch == 'pre_resnet':
+            if args.depth in [18, 34, 50, 101, 152]:
+                model = resnet_imagenet.preact_resnet(depth=args.depth)
+            else:
+                raise ValueError('Depth %d is not valid for PreActResNet...' % args.depth)
         else:
-            raise ValueError('Depth %d is not valid for ResNet...' % args.depth)
-    elif args.arch == 'pre_resnet':
-        if args.depth in [18, 34, 50, 101, 152]:
-            model = resnet_imagenet.preact_resnet(depth=args.depth)
+            raise ValueError('Architecture [%s] is not supported yet...' % args.arch)
+    elif args.dataset == 'tinyimagenet':
+        if args.arch == 'resnet':
+            if args.depth in [18, 34, 50, 101, 152]:
+                model = eval('models.resnet%d'%args.depth)(True)
+                model.avgpool = nn.AdaptiveAvgPool2d(1)
+                model.fc.out_features = 200
+            else:
+                raise ValueError('Depth %d is not valid for ResNet...' % args.depth)
         else:
-            raise ValueError('Depth %d is not valid for PreActResNet...' % args.depth)
-    else:
-        raise ValueError('Architecture [%s] is not supported yet...' % args.arch)
-    
+            raise ValueError('Architecture [%s] is not supported yet...' % args.arch)
+
     if model_file:
         ckpt = torch.load(model_file)
         state_dict = ckpt['model_state_dict']
