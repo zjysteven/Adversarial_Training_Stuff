@@ -1,4 +1,4 @@
-import os, random, copy
+import os, random, copy, glob
 from PIL import Image
 from collections import OrderedDict
 import numpy as np
@@ -6,12 +6,13 @@ try:
     from apex import amp
 except ModuleNotFoundError:
     pass
+from PIL import Image
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader, Subset, Dataset, Sampler
 from torchvision import datasets, transforms, models
 from torchvision.datasets import CIFAR10
 
@@ -21,9 +22,9 @@ import models.resnet_imagenet as resnet_imagenet
 import models.resnet_cifar as resnet_cifar
 
 
-######################################
-# Set up model, optimizer, scheduler #
-######################################
+#######################################################
+# Set up model, optimizer, scheduler, and dataloaders #
+#######################################################
 def setup(args, train=True, model_file=None):
     # initialize model
     if args.dataset == 'cifar10':
@@ -47,12 +48,13 @@ def setup(args, train=True, model_file=None):
         if args.arch == 'resnet':
             if args.depth in [18, 34, 50, 101, 152]:
                 model = eval('models.resnet%d'%args.depth)(True)
-                model.avgpool = nn.AdaptiveAvgPool2d(1)
                 model.fc.out_features = 200
             else:
                 raise ValueError('Depth %d is not valid for ResNet...' % args.depth)
         else:
             raise ValueError('Architecture [%s] is not supported yet...' % args.arch)
+    else:
+        raise ValueError('Dataset [%s] is not supported yet...' % args.dataset)
 
     if model_file:
         ckpt = torch.load(model_file)
@@ -67,8 +69,12 @@ def setup(args, train=True, model_file=None):
             model.load_state_dict(new_state_dict)
 
     # set up the normalizer
-    mean = torch.tensor([0.4914, 0.4822, 0.4465], dtype=torch.float32)
-    std = torch.tensor([0.2023, 0.1994, 0.2010], dtype=torch.float32)
+    if args.dataset == 'cifar10':
+        mean = torch.tensor([0.4914, 0.4822, 0.4465], dtype=torch.float32)
+        std = torch.tensor([0.2023, 0.1994, 0.2010], dtype=torch.float32)
+    elif args.dataset == 'tinyimagenet':
+        mean = torch.tensor([0.485, 0.456, 0.406], dtype=torch.float32)
+        std = torch.tensor([0.229, 0.224, 0.225], dtype=torch.float32)
     normalizer = NormalizeByChannelMeanStd(mean=mean, std=std)
     model = ModelWrapper(model, normalizer).cuda()
 
@@ -88,10 +94,12 @@ def setup(args, train=True, model_file=None):
         if args.amp:
             assert args.opt_level == 'O1', "Haven't tested opt_level %s with nn.DataParallel..." % args.opt_level
         model = nn.DataParallel(model)
+    
+    # get dataloaders
+    trainloader, testloader = get_train_loaders(args)
+    return model, optimizer, scheduler, trainloader, testloader
 
-    return model, optimizer, scheduler
-
-
+    
 def get_optimizer_and_scheduler(args, model):
     optimizer = optim.SGD(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr, momentum=args.momentum,
         weight_decay=args.weight_decay)
@@ -126,7 +134,6 @@ class ModelWrapper(nn.Module):
         x = self.normalizer(x)
         return self.model(x)
 
-    
     # adapted from https://github.com/MadryLab/robustness/blob/master/robustness/model_utils.py
     def register_layers(self, layer_names):
         '''
@@ -162,22 +169,10 @@ class ModelWrapper(nn.Module):
             
         setattr(self, 'layers', layer_dict)
     
-    """
-    def register_layers(self, layers):
-        setattr(self, 'layers', layers)
-
-        for layer_func in layers:
-            layer = layer_func(self.model)
-            def hook(module, _, output):
-                module.register_buffer('activations', output)
-
-            layer.register_forward_hook(hook)
-    """
     def extract_features(self, inp):        
         x = self.normalizer(inp)
         out = self.model(x)
         activs = {layer_name: layer_fn(self.model, layer_name).activations for layer_name, layer_fn in self.layers.items()}
-        #activs = [layer_fn(self.model).activations for layer_fn in self.layers]
         activs['output'] = out
         return activs
 
@@ -185,32 +180,131 @@ class ModelWrapper(nn.Module):
 ###################################
 # Set up data loader              #
 ###################################
+# https://github.com/pytorch/vision/issues/168
+class ChunkSampler(Sampler):
+    """Samples elements sequentially from some offset. 
+    Arguments:
+        num_samples: # of desired datapoints
+        start: offset where we should start selecting from
+    """
+    def __init__(self, num_samples, start = 0):
+        self.num_samples = num_samples
+        self.start = start
+
+    def __iter__(self):
+        return iter(range(self.start, self.start + self.num_samples))
+
+    def __len__(self):
+        return self.num_samples
+
+
 def get_train_loaders(args):
     kwargs = {'num_workers': 4,
               'batch_size': args.batch_size,
               'shuffle': True,
               'pin_memory': True}
-    if args.data_aug:
-        transform_train = transforms.Compose([
-            transforms.RandomCrop(32, padding=4),
-            transforms.RandomHorizontalFlip(),
+    
+    if args.dataset == 'cifar10':
+        if args.data_aug:
+            t = [
+                transforms.RandomCrop(32, padding=4),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor()
+            ]
+            if args.cutout:
+                t.append(Cutout(n_holes=args.cutout_n_holes, length=args.cutout_length))
+            transform_train = transforms.Compose(t)
+        else:
+            transform_train = transforms.Compose([
+                transforms.ToTensor(),
+            ])
+        transform_test = transforms.Compose([
             transforms.ToTensor(),
         ])
-    else:
-        transform_train = transforms.Compose([
+
+        if args.val:
+            NUM_TRAIN = 49000
+            NUM_VAL = 1000
+
+            trainset = CIFAR10_with_idx(root=args.data_dir, train=True,
+                                        transform=transform_train,
+                                        download=True)
+            testset = datasets.CIFAR10(root=args.data_dir, train=True,
+                                       transform=transform_test,
+                                       download=True)
+            trainloader = DataLoader(trainset, sampler=ChunkSampler(NUM_TRAIN, 0), **kwargs)
+            testloader = DataLoader(testset, num_workers=4, batch_size=100, shuffle=True, pin_memory=True, sampler=ChunkSampler(NUM_VAL, NUM_TRAIN))
+        else:
+            trainset = CIFAR10_with_idx(root=args.data_dir, train=True,
+                                        transform=transform_train,
+                                        download=True)
+            testset = datasets.CIFAR10(root=args.data_dir, train=False,
+                                       transform=transform_test,
+                                       download=True)
+            trainloader = DataLoader(trainset, **kwargs)
+            testloader = DataLoader(testset, num_workers=4, batch_size=100, shuffle=True, pin_memory=True)
+
+            """
+            if args.test_robust:
+                subset_idx = random.sample(range(10000), 1000)
+                subset = Subset(datasets.CIFAR10(root=args.data_dir, train=False,
+                    transform=transform_test,
+                    download=True), subset_idx)
+                rob_testloader = DataLoader(subset, num_workers=4, batch_size=100, shuffle=False, pin_memory=True)
+            else:
+                rob_testloader = None
+            """
+
+    elif args.dataset == 'tinyimagenet':
+        if args.data_aug:
+            t = [
+                transforms.Resize(256),
+                transforms.RandomCrop(224),
+                transforms.RandomHorizontalFlip(0.5),
+                transforms.ToTensor(),
+            ]
+            if args.cutout:
+                t.append(Cutout(n_holes=args.cutout_n_holes, length=args.cutout_length))
+            transform_train = transforms.Compose(t)
+        else:
+            transform_train = transforms.Compose([
+                transforms.Resize(256),
+                transforms.CenterCrop(224),
+                transforms.ToTensor(),
+            ])
+        transform_test = transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
             transforms.ToTensor(),
         ])
-    transform_test = transforms.Compose([
-        transforms.ToTensor(),
-    ])
-    trainset = datasets.CIFAR10(root=args.data_dir, train=True,
-                                transform=transform_train,
-                                download=True)
-    testset = datasets.CIFAR10(root=args.data_dir, train=False,
-                                transform=transform_test,
-                                download=True)
-    trainloader = DataLoader(trainset, **kwargs)
-    testloader = DataLoader(testset, num_workers=4, batch_size=100, shuffle=False, pin_memory=True)
+
+        if args.val:
+            NUM_TRAIN = 100000
+            NUM_VAL = 10000
+
+            trainset = TinyImageNet(root=os.path.join(args.data_dir, 'tiny-imagenet-200'), split='train', 
+                transform=transform_train, in_memory=True)
+            testset = TinyImageNet(root=os.path.join(args.data_dir, 'tiny-imagenet-200'), split='train', 
+                transform=transform_test, in_memory=True)
+            trainloader = DataLoader(trainset, sampler=ChunkSampler(NUM_TRAIN, 0), **kwargs)
+            testloader = DataLoader(testset, num_workers=4, batch_size=100, shuffle=True, pin_memory=True, sampler=ChunkSampler(NUM_VAL, NUM_TRAIN))
+        else:
+            trainset = TinyImageNet(root=os.path.join(args.data_dir, 'tiny-imagenet-200'), split='train', 
+                transform=transform_train, in_memory=True)
+            testset = TinyImageNet(root=os.path.join(args.data_dir, 'tiny-imagenet-200'), split='val', 
+                transform=transform_test, in_memory=True)
+            
+            trainloader = DataLoader(trainset, **kwargs)
+            testloader = DataLoader(testset, num_workers=4, batch_size=100, shuffle=True, pin_memory=True)
+            """
+            if args.test_robust:
+                subset_idx = random.sample(range(10000), 1000)
+                subset = Subset(testset, subset_idx)
+                rob_testloader = DataLoader(subset, num_workers=4, batch_size=100, shuffle=False, pin_memory=True)
+            else:
+                rob_testloader = None
+            """
+
     return trainloader, testloader
 
 
@@ -219,31 +313,49 @@ def get_loader(args, train=False, batch_size=100, shuffle=False, subset_idx=None
               'batch_size': batch_size,
               'shuffle': shuffle,
               'pin_memory': True}
-    if augmentation:
-        transform_test = transforms.Compose([
-            transforms.RandomCrop(32, padding=4),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-        ])
-    else:
-        transform_test = transforms.Compose([
-            transforms.ToTensor(),
-        ])
-    if subset_idx is not None:
-        testset = Subset(datasets.CIFAR10(root=args.data_dir, train=train,
-                                transform=transform_test,
-                                download=False), subset_idx)
-    else:
-        testset = datasets.CIFAR10(root=args.data_dir, train=train,
-                                transform=transform_test,
-                                download=False)
-    testloader = DataLoader(testset, **kwargs)
+    
+    if args.dataset == 'tinyimagenet':
+        if augmentation:
+            transform_test = transforms.Compose([
+                transforms.Resize(256),
+                transforms.RandomCrop(224),
+                transforms.ToTensor(),
+            ])
+        else:
+            transform_test = transforms.Compose([
+                transforms.ToTensor(),
+            ])
+        if subset_idx is not None:
+            testset = Subset(TinyImageNet(
+                root=os.path.join(args.data_dir, 'tiny-imagenet-200'), split='train' if train else 'val',
+                transform=transform_test), subset_idx)
+        else:
+            testset = TinyImageNet(root=os.path.join(args.data_dir, 'tiny-imagenet-200'), 
+                split='train' if train else 'val', transform=transform_test)
+        testloader = DataLoader(testset, **kwargs)
+    elif args.dataset == 'cifar10':
+        if augmentation:
+            transform_test = transforms.Compose([
+                transforms.RandomCrop(32, padding=4),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+            ])
+        else:
+            transform_test = transforms.Compose([
+                transforms.ToTensor(),
+            ])
+        if subset_idx is not None:
+            testset = Subset(datasets.CIFAR10(root=args.data_dir, train=train,
+                                    transform=transform_test,
+                                    download=False), subset_idx)
+        else:
+            testset = datasets.CIFAR10(root=args.data_dir, train=train,
+                                    transform=transform_test,
+                                    download=False)
+        testloader = DataLoader(testset, **kwargs)
     return testloader
 
 
-###################################
-# CAT related                     #
-###################################
 class CIFAR10_with_idx(CIFAR10):
     def __init__(self, root, train=True, transform=None, target_transform=None,
                  download=False):
@@ -271,6 +383,92 @@ class CIFAR10_with_idx(CIFAR10):
             target = self.target_transform(target)
 
         return img, target, index
+
+
+# https://github.com/leemengtaiwan/tiny-imagenet/blob/master/TinyImageNet.py
+EXTENSION = 'JPEG'
+NUM_IMAGES_PER_CLASS = 500
+CLASS_LIST_FILE = 'wnids.txt'
+VAL_ANNOTATION_FILE = 'val_annotations.txt'
+
+
+class TinyImageNet(Dataset):
+    """Tiny ImageNet data set available from `http://cs231n.stanford.edu/tiny-imagenet-200.zip`.
+    Parameters
+    ----------
+    root: string
+        Root directory including `train`, `test` and `val` subdirectories.
+    split: string
+        Indicating which split to return as a data set.
+        Valid option: [`train`, `test`, `val`]
+    transform: torchvision.transforms
+        A (series) of valid transformation(s).
+    in_memory: bool
+        Set to True if there is enough memory (about 5G) and want to minimize disk IO overhead.
+    """
+    def __init__(self, root, split='train', transform=None, target_transform=None, in_memory=False):
+        self.root = os.path.expanduser(root)
+        self.split = split
+        self.transform = transform
+        self.target_transform = target_transform
+        self.in_memory = in_memory
+        self.split_dir = os.path.join(root, self.split)
+        self.image_paths = sorted(glob.iglob(os.path.join(self.split_dir, '**', '*.%s' % EXTENSION), recursive=True))
+        self.labels = {}  # fname - label number mapping
+        self.images = []  # used for in-memory processing
+
+        # build class label - number mapping
+        with open(os.path.join(self.root, CLASS_LIST_FILE), 'r') as fp:
+            self.label_texts = sorted([text.strip() for text in fp.readlines()])
+        self.label_text_to_number = {text: i for i, text in enumerate(self.label_texts)}
+
+        if self.split == 'train':
+            for label_text, i in self.label_text_to_number.items():
+                for cnt in range(NUM_IMAGES_PER_CLASS):
+                    self.labels['%s_%d.%s' % (label_text, cnt, EXTENSION)] = i
+        elif self.split == 'val':
+            with open(os.path.join(self.split_dir, VAL_ANNOTATION_FILE), 'r') as fp:
+                for line in fp.readlines():
+                    terms = line.split('\t')
+                    file_name, label_text = terms[0], terms[1]
+                    self.labels[file_name] = self.label_text_to_number[label_text]
+
+        # read all images into torch tensor in memory to minimize disk IO overhead
+        if self.in_memory:
+            self.images = [self.read_image(path) for path in self.image_paths]
+
+    def __len__(self):
+        return len(self.image_paths)
+
+    def __getitem__(self, index):
+        file_path = self.image_paths[index]
+
+        if self.in_memory:
+            img = self.images[index]
+        else:
+            img = self.read_image(file_path)
+
+        if self.split == 'test':
+            return img
+        else:
+            # file_name = file_path.split('/')[-1]
+            return img, self.labels[os.path.basename(file_path)]
+
+    def __repr__(self):
+        fmt_str = 'Dataset ' + self.__class__.__name__ + '\n'
+        fmt_str += '    Number of datapoints: {}\n'.format(self.__len__())
+        tmp = self.split
+        fmt_str += '    Split: {}\n'.format(tmp)
+        fmt_str += '    Root Location: {}\n'.format(self.root)
+        tmp = '    Transforms (if any): '
+        fmt_str += '{0}{1}\n'.format(tmp, self.transform.__repr__().replace('\n', '\n' + ' ' * len(tmp)))
+        tmp = '    Target Transforms (if any): '
+        fmt_str += '{0}{1}'.format(tmp, self.target_transform.__repr__().replace('\n', '\n' + ' ' * len(tmp)))
+        return fmt_str
+
+    def read_image(self, path):
+        img = Image.open(path)
+        return self.transform(img) if self.transform else img
 
 
 class Cutout(object):
