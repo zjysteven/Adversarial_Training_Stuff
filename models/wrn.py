@@ -86,6 +86,7 @@ class WideResNet(nn.Module):
         out = self.block2(out)
         out = self.block3(out)
         out = self.relu(self.bn1(out))
-        out = F.avg_pool2d(out, 8)
+        assert out.shape[-2] == out.shape[-1]
+        out = F.avg_pool2d(out, out.shape[-1])
         out = out.view(-1, self.nChannels)
         return self.fc(out)
