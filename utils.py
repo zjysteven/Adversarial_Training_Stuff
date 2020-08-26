@@ -44,6 +44,11 @@ def setup(args, train=True, model_file=None):
                 raise ValueError('Depth %d is not valid for PreActResNet...' % args.depth)
         else:
             raise ValueError('Architecture [%s] is not supported yet...' % args.arch)
+    elif args.dataset == 'stl10':
+        if args.arch == 'wrn':
+            model = WideResNet(depth=args.depth, widen_factor=args.width)
+        else:
+            raise ValueError('Architecture [%s] is not supported yet...' % args.arch)
     elif args.dataset == 'tinyimagenet':
         if args.arch == 'resnet':
             if args.depth in [18, 34, 50, 101, 152]:
@@ -72,6 +77,9 @@ def setup(args, train=True, model_file=None):
     if args.dataset == 'cifar10':
         mean = torch.tensor([0.4914, 0.4822, 0.4465], dtype=torch.float32)
         std = torch.tensor([0.2023, 0.1994, 0.2010], dtype=torch.float32)
+    elif args.dataset == 'stl10':
+        mean = torch.tensor([0.5, 0.5, 0.5], dtype=torch.float32)
+        std = torch.tensor([0.5, 0.5, 0.5], dtype=torch.float32)
     elif args.dataset == 'tinyimagenet':
         mean = torch.tensor([0.485, 0.456, 0.406], dtype=torch.float32)
         std = torch.tensor([0.229, 0.224, 0.225], dtype=torch.float32)
@@ -86,8 +94,11 @@ def setup(args, train=True, model_file=None):
             model = nn.DataParallel(model)
         return model
 
+    # get dataloaders
+    trainloader, testloader, num_train = get_train_loaders(args)
+
     # set up optimizer and scheduler
-    model, optimizer, scheduler = get_optimizer_and_scheduler(args, model)
+    model, optimizer, scheduler = get_optimizer_and_scheduler(args, model, num_train)
 
     # nn.DataParallel
     if torch.cuda.device_count() > 1:
@@ -95,12 +106,10 @@ def setup(args, train=True, model_file=None):
             assert args.opt_level == 'O1', "Haven't tested opt_level %s with nn.DataParallel..." % args.opt_level
         model = nn.DataParallel(model)
     
-    # get dataloaders
-    trainloader, testloader = get_train_loaders(args)
     return model, optimizer, scheduler, trainloader, testloader
 
     
-def get_optimizer_and_scheduler(args, model):
+def get_optimizer_and_scheduler(args, model, num_train):
     optimizer = optim.SGD(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr, momentum=args.momentum,
         weight_decay=args.weight_decay)
 
@@ -112,9 +121,9 @@ def get_optimizer_and_scheduler(args, model):
     
     if args.lr_sch == 'multistep':
         if len(args.sch_intervals) > 0:
-            sch_intervals = [int(e * (50000 // args.batch_size + 1)) for e in args.sch_intervals]
+            sch_intervals = [int(e * (num_train // args.batch_size + 1)) for e in args.sch_intervals]
         else:
-            lr_steps = args.epochs * (50000 // args.batch_size + 1)
+            lr_steps = args.epochs * (num_train // args.batch_size + 1)
             sch_intervals = [lr_steps//2, (3*lr_steps)//4]
         scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=sch_intervals, gamma=args.lr_gamma)
     elif args.lr_sch == 'cyclic':
@@ -244,6 +253,58 @@ def get_train_loaders(args):
             trainloader = DataLoader(trainset, **kwargs)
             testloader = DataLoader(testset, num_workers=4, batch_size=100, shuffle=True, pin_memory=True)
 
+            NUM_TRAIN = len(trainset)
+            """
+            if args.test_robust:
+                subset_idx = random.sample(range(10000), 1000)
+                subset = Subset(datasets.CIFAR10(root=args.data_dir, train=False,
+                    transform=transform_test,
+                    download=True), subset_idx)
+                rob_testloader = DataLoader(subset, num_workers=4, batch_size=100, shuffle=False, pin_memory=True)
+            else:
+                rob_testloader = None
+            """
+    elif args.dataset == 'stl10':
+        if args.data_aug:
+            t = [
+                transforms.RandomCrop(96, padding=4),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor()
+            ]
+            if args.cutout:
+                t.append(Cutout(n_holes=args.cutout_n_holes, length=args.cutout_length))
+            transform_train = transforms.Compose(t)
+        else:
+            transform_train = transforms.Compose([
+                transforms.ToTensor(),
+            ])
+        transform_test = transforms.Compose([
+            transforms.ToTensor(),
+        ])
+
+        if args.val:
+            NUM_TRAIN = 5000
+            NUM_VAL = 500
+
+            trainset = datasets.STL10(root=args.data_dir, split='train',
+                                      transform=transform_train,
+                                      download=True)
+            testset = datasets.STL10(root=args.data_dir, split='train',
+                                      transform=transform_test,
+                                      download=True)
+            trainloader = DataLoader(trainset, sampler=ChunkSampler(NUM_TRAIN, 0), **kwargs)
+            testloader = DataLoader(testset, num_workers=4, batch_size=100, shuffle=True, pin_memory=True, sampler=ChunkSampler(NUM_VAL, NUM_TRAIN))
+        else:
+            trainset = datasets.STL10(root=args.data_dir, split='train',
+                                      transform=transform_train,
+                                      download=True)
+            testset = datasets.STL10(root=args.data_dir, split='test',
+                                      transform=transform_test,
+                                      download=True)
+            trainloader = DataLoader(trainset, **kwargs)
+            testloader = DataLoader(testset, num_workers=4, batch_size=100, shuffle=True, pin_memory=True)
+
+            NUM_TRAIN = len(trainset)
             """
             if args.test_robust:
                 subset_idx = random.sample(range(10000), 1000)
@@ -296,6 +357,8 @@ def get_train_loaders(args):
             
             trainloader = DataLoader(trainset, **kwargs)
             testloader = DataLoader(testset, num_workers=4, batch_size=100, shuffle=True, pin_memory=True)
+            
+            NUM_TRAIN = len(trainset)
             """
             if args.test_robust:
                 subset_idx = random.sample(range(10000), 1000)
@@ -305,7 +368,7 @@ def get_train_loaders(args):
                 rob_testloader = None
             """
 
-    return trainloader, testloader
+    return trainloader, testloader, NUM_TRAIN
 
 
 def get_loader(args, train=False, batch_size=100, shuffle=False, subset_idx=None, augmentation=False):
@@ -346,10 +409,30 @@ def get_loader(args, train=False, batch_size=100, shuffle=False, subset_idx=None
             ])
         if subset_idx is not None:
             testset = Subset(datasets.CIFAR10(root=args.data_dir, train=train,
-                                    transform=transform_test,
-                                    download=False), subset_idx)
+                                              transform=transform_test,
+                                              download=False), subset_idx)
         else:
             testset = datasets.CIFAR10(root=args.data_dir, train=train,
+                                       transform=transform_test,
+                                       download=False)
+        testloader = DataLoader(testset, **kwargs)
+    elif args.dataset == 'stl10':
+        if augmentation:
+            transform_test = transforms.Compose([
+                transforms.RandomCrop(96, padding=4),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+            ])
+        else:
+            transform_test = transforms.Compose([
+                transforms.ToTensor(),
+            ])
+        if subset_idx is not None:
+            testset = Subset(datasets.STL10(root=args.data_dir, split='train' if train else 'test',
+                                            transform=transform_test,
+                                            download=False), subset_idx)
+        else:
+            testset = datasets.STL10(root=args.data_dir, split='train' if train else 'test',
                                     transform=transform_test,
                                     download=False)
         testloader = DataLoader(testset, **kwargs)
@@ -581,9 +664,11 @@ def trades_loss(model,
                 beta=1.0,
                 distance='l_inf'):
     # define KL-loss
-    #criterion_kl = nn.KLDivLoss(size_average=False)
-    criterion_kl = nn.KLDivLoss(reduction='batchmean')
+    criterion_kl = nn.KLDivLoss(reduction='sum')
+
+    mode = model.training
     model.eval()
+
     batch_size = len(x_natural)
     # generate adversarial example
     x_adv = x_natural.detach() + 0.001 * torch.randn(x_natural.shape).cuda().detach()
@@ -628,7 +713,8 @@ def trades_loss(model,
         x_adv = Variable(x_natural + delta, requires_grad=False)
     else:
         x_adv = torch.clamp(x_adv, 0.0, 1.0)
-    model.train()
+
+    model.train(mode)
 
     #x_adv = Variable(torch.clamp(x_adv, 0.0, 1.0), requires_grad=False)
     x_adv = x_adv.clone().detach()
@@ -637,9 +723,8 @@ def trades_loss(model,
     # calculate robust loss
     logits = model(x_natural)
     loss_natural = F.cross_entropy(logits, y)
-    #loss_robust = (1.0 / batch_size) * criterion_kl(F.log_softmax(model(x_adv), dim=1),
-    #                                                F.softmax(model(x_natural), dim=1))
-    loss_robust = criterion_kl(F.log_softmax(model(x_adv), dim=1), F.softmax(model(x_natural), dim=1))
+    loss_robust = (1.0 / batch_size) * criterion_kl(F.log_softmax(model(x_adv), dim=1),
+                                                    F.softmax(model(x_natural), dim=1))
     loss = loss_natural + beta * loss_robust
     return loss
 

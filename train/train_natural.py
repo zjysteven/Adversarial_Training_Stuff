@@ -20,17 +20,21 @@ import utils
 
 
 class Natural():
-    def __init__(self, args, model, optimizer, scheduler, writer, save_path=None, **kwargs):
+    def __init__(self, args, model, optimizer, scheduler, trainloader, testloader, 
+                 writer, save_path=None, **kwargs):
         self.model = model
         self.epochs = args.epochs
         self.optimizer = optimizer
         self.scheduler = scheduler
 
+        self.trainloader = trainloader
+        self.testloader = testloader
+
         self.writer = writer
         self.save_path = save_path
         
         self.criterion = nn.CrossEntropyLoss()
-        self.prepare_data(args)
+        #self.prepare_data(args)
         self.use_amp = args.amp
 
     def prepare_data(self, args):
@@ -71,9 +75,15 @@ class Natural():
         self.model.train()
         losses = 0
         correct = 0
+        total = 0
 
         batch_iter = self.get_batch_iterator()
-        for inputs, targets, idx in batch_iter:
+        for batch_data in batch_iter:
+            if len(batch_data) == 3:
+                inputs, targets, idx = batch_data
+            elif len(batch_data) == 2:
+                inputs, targets = batch_data
+
             inputs, targets = inputs.cuda(), targets.cuda()
             outputs = self.model(inputs)
 
@@ -90,13 +100,15 @@ class Natural():
             else:
                 loss.backward()
             self.optimizer.step() 
-            self.scheduler.step()        
+            self.scheduler.step()
+            
+            total += inputs.size(0)
 
-        print_message = 'Epoch [{:3d}] | Loss: {:.4f}, Acc: {:.2%}'.format(epoch, losses/len(batch_iter), correct/len(self.trainset))
+        print_message = 'Epoch [{:3d}] | Loss: {:.4f}, Acc: {:.2%}'.format(epoch, losses/len(batch_iter), correct/total)
         tqdm.write(print_message)
 
         self.writer.add_scalar('train/clean_loss', losses/len(batch_iter), epoch)
-        self.writer.add_scalar('train/clean_acc', correct/len(self.trainset), epoch)
+        self.writer.add_scalar('train/clean_acc', correct/total, epoch)
 
     def test(self, epoch):
         self.model.eval()
@@ -165,11 +177,16 @@ def main():
     assert torch.cuda.is_available()
 
     # set up writer, logger, and save directory for models
-    arch = '{:s}{:d}'.format(args.arch, args.depth)
-    save_root = os.path.join('checkpoints', arch, 'natural', 'seed_'+str(args.seed))
+    if args.arch == 'wrn':
+        arch = '{:s}{:d}_{:d}'.format(args.arch, args.depth, args.width)
+    else:
+        arch = '{:s}{:d}'.format(args.arch, args.depth)
+    save_root = os.path.join('checkpoints', args.dataset, arch, 'natural', 'seed_'+str(args.seed))
     subfolder = 'epochs_{:d}_batch_{:d}_lr_{:s}'.format(args.epochs, args.batch_size, args.lr_sch)
     if args.lr_sch == 'cyclic':
         subfolder += '_{:.1f}'.format(args.lr_max)
+    if args.val:
+        subfolder += '_val'
     if args.amp:
         subfolder += '_%s' % args.opt_level
     save_root = os.path.join(save_root, subfolder)
@@ -193,10 +210,10 @@ def main():
     random.seed(args.seed)
 
     # initialize model, optimizer, and scheduler
-    model, optimizer, scheduler = utils.setup(args, train=True)
+    model, optimizer, scheduler, trainloader, testloader = utils.setup(args, train=True)
 
     # train the model
-    trainer = Natural(args, model, optimizer, scheduler, writer, save_root)
+    trainer = Natural(args, model, optimizer, scheduler, trainloader, testloader, writer, save_root)
     trainer.run()
 
 
