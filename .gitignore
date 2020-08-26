@@ -12,3 +12,4 @@ train_cat_*
 *on_others*
 *.sh
 *ipynb
+*.pt
