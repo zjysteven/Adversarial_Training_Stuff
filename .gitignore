@@ -15,5 +15,5 @@ train_cat_*
 *.pt
 demogen.py
 explore*
-train_madry_1.py
+train_madry_copy.py
 train_finetune.py
