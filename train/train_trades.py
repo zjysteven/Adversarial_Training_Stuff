@@ -21,11 +21,18 @@ from attacks import Linf_PGD
 
 
 class TRADES():
-    def __init__(self, args, model, optimizer, scheduler, writer, save_path=None, **kwargs):
+    def __init__(self, args, model, optimizer, scheduler, trainloader, testloader, 
+                 writer, save_path=None, **kwargs):
         self.model = model
         self.epochs = args.epochs
         self.optimizer = optimizer
         self.scheduler = scheduler
+
+        self.trainloader = trainloader
+        self.testloader = testloader
+
+        self.writer = writer
+        self.save_path = save_path
 
         # trades loss config
         self.loss_config = {
@@ -35,41 +42,9 @@ class TRADES():
             'beta': args.beta,
             'distance': 'l_inf'
         }
-
-        self.writer = writer
-        self.save_path = save_path
         
         self.test_robust = args.test_robust
-        self.prepare_data(args)
-
         self.use_amp = args.amp
-        
-    def prepare_data(self, args):
-        transform_train = transforms.Compose([
-            transforms.RandomCrop(32, padding=4),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor()
-        ])
-        transform_test = transforms.Compose([
-            transforms.ToTensor(),
-        ])
-        self.trainset = utils.CIFAR10_with_idx(root=args.data_dir, train=True,
-                                    transform=transform_train,
-                                    download=True)
-        self.testset = datasets.CIFAR10(root=args.data_dir, train=False,
-                                    transform=transform_test,
-                                    download=True)
-        self.trainloader = DataLoader(self.trainset, num_workers=4, batch_size=args.batch_size, shuffle=True, pin_memory=True)
-        self.testloader = DataLoader(self.testset, num_workers=4, batch_size=100, shuffle=False, pin_memory=True)
-
-        if self.test_robust:
-            subset_idx = random.sample(range(10000), 1000)
-            subset = Subset(datasets.CIFAR10(root=args.data_dir, train=False,
-                                    transform=transform_test,
-                                    download=True), subset_idx)
-            self.rob_testloader = DataLoader(subset, num_workers=4, batch_size=100, shuffle=False, pin_memory=True)
-        else:
-            self.rob_testloader = None
 
     def get_epoch_iterator(self):
         iterator = tqdm(list(range(1, self.epochs+1)), total=self.epochs, desc='Epoch',
@@ -95,7 +70,12 @@ class TRADES():
         losses = 0
 
         batch_iter = self.get_batch_iterator()
-        for inputs, targets, idx in batch_iter:
+        for batch_data in batch_iter:
+            if len(batch_data) == 3:
+                inputs, targets, idx = batch_data
+            elif len(batch_data) == 2:
+                inputs, targets = batch_data
+            
             inputs, targets = inputs.cuda(), targets.cuda()
 
             loss = utils.trades_loss(self.model, inputs, targets, **self.loss_config)
@@ -114,7 +94,6 @@ class TRADES():
         tqdm.write(print_message)
 
         self.writer.add_scalar('train/adv_loss', losses/len(batch_iter), epoch)
-        #self.writer.add_scalar('train/adv_acc', correct/len(self.trainset), epoch)
         self.writer.add_scalar('lr', current_lr, epoch)
 
     def test(self, epoch):
@@ -141,13 +120,16 @@ class TRADES():
             loss=clean_loss/len(self.testloader), acc=clean_correct/total
         )
 
-        if self.rob_testloader:
+        if self.test_robust:
             total = 0
             adv_loss = 0; adv_correct = 0
+            batch_num = min(len(self.testloader), 10)
 
-            for inputs, targets in self.rob_testloader:
+            for idx, (inputs, targets) in enumerate(self.testloader):
+                if idx == batch_num:
+                    break
+
                 inputs, targets = inputs.cuda(), targets.cuda()
-
                 adv_inputs = Linf_PGD(self.model, inputs, targets, eps=8./255., alpha=2./255., steps=10)
                 
                 with torch.no_grad():
@@ -159,13 +141,13 @@ class TRADES():
 
                 total += inputs.size(0)
             
-            self.writer.add_scalar('test/adv_loss', adv_loss/len(self.rob_testloader), epoch)
+            self.writer.add_scalar('test/adv_loss', adv_loss/batch_num, epoch)
             self.writer.add_scalar('test/adv_acc', 100*adv_correct/total, epoch)
 
             print_message += '\tAdv Loss {loss:.4f}\tAdv Acc {acc:.2%}\n'.format(
                 loss=adv_loss/len(self.testloader), acc=adv_correct/total
             )
-        
+
         tqdm.write(print_message)
 
     def _save(self, attr_name, epoch):
@@ -212,7 +194,7 @@ def main():
 
     # set up writer, logger, and save directory for models
     arch = '{:s}{:d}'.format(args.arch, args.depth)
-    save_root = os.path.join('checkpoints', arch, 'trades', 'seed_'+str(args.seed))
+    save_root = os.path.join('checkpoints', args.dataset, arch, 'trades', 'seed_'+str(args.seed))
     subfolder = 'epochs_{:d}_batch_{:d}_lr_{:s}'.format(args.epochs, args.batch_size, args.lr_sch)
     if args.lr_sch == 'cyclic':
         subfolder += '_{:.1f}'.format(args.lr_max)
@@ -241,10 +223,10 @@ def main():
     random.seed(args.seed)
 
     # initialize model, optimizer, and scheduler
-    model, optimizer, scheduler = utils.setup(args, train=True)
+    model, optimizer, scheduler, trainloader, testloader = utils.setup(args, train=True)
 
     # train the model
-    trainer = TRADES(args, model, optimizer, scheduler, writer, save_root)
+    trainer = TRADES(args, model, optimizer, scheduler, trainloader, testloader, writer, save_root)
     trainer.run()
 
 

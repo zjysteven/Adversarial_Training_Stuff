@@ -51,36 +51,6 @@ class Madry():
         self.use_amp = args.amp
         self.clean_coeff = args.clean_coeff
 
-    def prepare_data(self, args):
-        t = [
-            transforms.RandomCrop(32, padding=4),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor()
-        ]
-        if args.cutout:
-            t.append(utils.Cutout(n_holes=args.cutout_n_holes, length=args.cutout_length))
-        transform_train = transforms.Compose(t)
-        transform_test = transforms.Compose([
-            transforms.ToTensor(),
-        ])
-        self.trainset = utils.CIFAR10_with_idx(root=args.data_dir, train=True,
-                                    transform=transform_train,
-                                    download=True)
-        self.testset = datasets.CIFAR10(root=args.data_dir, train=False,
-                                    transform=transform_test,
-                                    download=True)
-        self.trainloader = DataLoader(self.trainset, num_workers=4, batch_size=args.batch_size, shuffle=True, pin_memory=True)
-        self.testloader = DataLoader(self.testset, num_workers=4, batch_size=100, shuffle=False, pin_memory=True)
-
-        if self.test_robust:
-            subset_idx = random.sample(range(10000), 1000)
-            subset = Subset(datasets.CIFAR10(root=args.data_dir, train=False,
-                                    transform=transform_test,
-                                    download=True), subset_idx)
-            self.rob_testloader = DataLoader(subset, num_workers=4, batch_size=100, shuffle=False, pin_memory=True)
-        else:
-            self.rob_testloader = None
-
     def get_epoch_iterator(self):
         iterator = tqdm(list(range(1, self.epochs+1)), total=self.epochs, desc='Epoch',
                         leave=True, position=1)
