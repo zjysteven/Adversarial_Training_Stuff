@@ -13,3 +13,7 @@ train_cat_*
 *.sh
 *ipynb
 *.pt
+demogen.py
+explore*
+train_madry_1.py
+train_finetune.py
