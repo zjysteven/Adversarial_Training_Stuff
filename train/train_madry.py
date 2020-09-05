@@ -34,7 +34,7 @@ class Madry():
         self.writer = writer
         self.save_path = save_path
         
-        self.criterion = nn.CrossEntropyLoss(reduction='none')
+        self.criterion = nn.CrossEntropyLoss(reduction='mean')
 
         # PGD configs
         self.attack_cfg = {'eps': args.eps/255., 
@@ -48,43 +48,7 @@ class Madry():
                           }
         
         self.test_robust = args.test_robust
-        #self.prepare_data(args)
-
-        """
-        self.eps = torch.zeros((len(self.trainset), 3, 32, 32))
-        self.loss = torch.zeros((len(self.trainset)))
-        self.correct = torch.zeros((len(self.trainset)))
-        self.fosc = torch.zeros((len(self.trainset)))
-        self.minus_delta_loss = torch.zeros((len(self.trainset), 2))
-        self.minus_delta_correct = torch.zeros((len(self.trainset), 2))
-        """
-        self.save_eps = args.save_eps
-        self.save_loss = args.save_loss
-        self.save_fosc = args.save_fosc
-        self.save_correct = args.save_correct
-        self.save_minus_delta = args.save_minus_delta
-        
-
         self.use_amp = args.amp
-
-        """
-        self.increase_steps = args.increase_steps
-        self.increase_eps = args.increase_eps
-        self.linear_eps = args.linear_eps
-        if self.increase_steps:
-            assert len(args.more_steps) > 0
-            assert len(args.more_steps) == len(args.steps_intervals)
-            self.more_steps = np.array(args.more_steps)
-            self.steps_intervals = np.array(args.steps_intervals)
-        if self.increase_eps:
-            assert len(args.more_eps) > 0
-            assert len(args.more_eps) == len(args.eps_intervals)
-            self.more_eps = np.array(args.more_eps)
-            self.eps_intervals = np.array(args.eps_intervals)
-        if self.linear_eps:
-            self.eps_list = np.linspace(0, args.eps, args.epochs)
-        """
-
         self.clean_coeff = args.clean_coeff
 
     def prepare_data(self, args):
@@ -137,22 +101,7 @@ class Madry():
         self.model.train()
 
         current_lr = self.scheduler.get_last_lr()[0]
-        """
-        if self.increase_steps:
-            current_steps_idx = self.steps_intervals < epoch
-            if np.any(current_steps_idx):
-                current_steps = self.more_steps[current_steps_idx][-1]
-                self.attack_cfg['steps'] = current_steps
         
-        if self.increase_eps:
-            current_eps_idx = self.eps_intervals < epoch
-            if np.any(current_eps_idx):
-                current_eps = self.more_eps[current_eps_idx][-1]
-                self.attack_cfg['eps'] = float(current_eps / 255.)
-        
-        if self.linear_eps:
-            self.attack_cfg['eps'] = float(self.eps_list[epoch-1] / 255.)
-        """
         losses = 0
         correct = 0
         total = 0
@@ -167,25 +116,9 @@ class Madry():
             inputs, targets = inputs.cuda(), targets.cuda()
 
             if self.clean_coeff < 1:
-                adv_return = Linf_PGD(self.model, inputs, targets, 
+                adv_inputs = Linf_PGD(self.model, inputs, targets, 
                     **self.attack_cfg, use_amp=self.use_amp, optimizer=self.optimizer,
                     fosc=self.save_fosc)
-
-                if self.save_fosc:
-                    adv_inputs, fosc_val = adv_return
-                    #self.fosc[idx] = fosc_val.cpu()
-                else:
-                    adv_inputs = adv_return
-                """
-                if self.save_minus_delta:
-                    self.model.eval()
-                    outputs = self.model(2*inputs-adv_inputs)
-                    _, preds = outputs.max(1)
-                    loss = self.criterion(outputs, targets)
-                    self.minus_delta_loss[idx, 0] = loss.detach().cpu()
-                    self.minus_delta_correct[idx, 0] = preds.eq(targets).float().cpu()
-                    self.model.train()
-                """
 
             if self.clean_coeff > 0 and self.clean_coeff < 1:
                 outputs = self.model(adv_inputs)
@@ -200,15 +133,10 @@ class Madry():
                 outputs = self.model(inputs)
                 loss = self.criterion(outputs, targets)
 
-            #if self.save_loss:
-            #    self.loss[idx] = loss.detach().cpu()
-            loss = loss.mean()
             losses += loss.item()
 
             _, predicted = outputs.max(1)
             correct += predicted.eq(targets).sum().item()
-            #if self.save_correct:
-            #    self.correct[idx] = predicted.eq(targets).float().cpu()
 
             self.optimizer.zero_grad()
             if self.use_amp:
@@ -221,37 +149,12 @@ class Madry():
 
             total += inputs.size(0)
 
-            """
-            if self.save_eps:
-                self.eps[idx] = (adv_inputs-inputs).cpu()
-
-            if self.save_minus_delta:
-                self.model.eval()
-                outputs = self.model(2*inputs-adv_inputs)
-                _, preds = outputs.max(1)
-                loss = self.criterion(outputs, targets)
-                self.minus_delta_loss[idx, 1] = loss.detach().cpu()
-                self.minus_delta_correct[idx, 1] = preds.eq(targets).float().cpu()
-                self.model.train() 
-            """
-
-        """
-        if self.save_minus_delta:
-            print_message = 'Epoch [{:3d}] | Adv Loss: {:.4f}, Adv Acc: {:.2%}, Minus delta loss: {:.4f} / {:.4f}, Minus delta acc: {:.2%} / {:.2%}'.format(
-                epoch, losses/len(batch_iter), correct/len(self.trainset), 
-                self.minus_delta_loss[:,0].mean(), self.minus_delta_loss[:,1].mean(),
-                self.minus_delta_correct[:,0].mean(), self.minus_delta_correct[:,1].mean())
-        else:
-            print_message = 'Epoch [{:3d}] | Adv Loss: {:.4f}, Adv Acc: {:.2%}'.format(epoch, losses/len(batch_iter), correct/len(self.trainset))
-        """
         print_message = 'Epoch [{:3d}] | Adv Loss: {:.4f}, Adv Acc: {:.2%}'.format(epoch, losses/len(batch_iter), correct/total)
         tqdm.write(print_message)
 
         self.writer.add_scalar('train/adv_loss', losses/len(batch_iter), epoch)
         self.writer.add_scalar('train/adv_acc', correct/total, epoch)
         self.writer.add_scalar('lr', current_lr, epoch)
-        self.writer.add_scalar('steps', self.attack_cfg['steps'], epoch)
-        self.writer.add_scalar('eps', self.attack_cfg['eps']*255, epoch)
 
     def test(self, epoch):
         self.model.eval()
@@ -276,33 +179,6 @@ class Madry():
         print_message = 'Evaluation  | Clean Loss {loss:.4f}\tClean Acc {acc:.2%}'.format(
             loss=clean_loss/len(self.testloader), acc=clean_correct/total
         )
-        
-        """
-        if self.rob_testloader:
-            total = 0
-            adv_loss = 0; adv_correct = 0
-
-            for inputs, targets in self.rob_testloader:
-                inputs, targets = inputs.cuda(), targets.cuda()
-
-                adv_inputs = Linf_PGD(self.model, inputs, targets, eps=8./255., alpha=2./255., steps=10)
-                
-                with torch.no_grad():
-                    outputs = self.model(adv_inputs)
-                    adv_loss += nn.CrossEntropyLoss()(outputs, targets).item()
-                
-                _, predicted = outputs.max(1)
-                adv_correct += predicted.eq(targets).sum().item()
-
-                total += inputs.size(0)
-            
-            self.writer.add_scalar('test/adv_loss', adv_loss/len(self.rob_testloader), epoch)
-            self.writer.add_scalar('test/adv_acc', 100*adv_correct/total, epoch)
-
-            print_message += '\tAdv Loss {loss:.4f}\tAdv Acc {acc:.2%}\n'.format(
-                loss=adv_loss/len(self.testloader), acc=adv_correct/total
-            )
-        """
 
         if self.test_robust:
             total = 0
@@ -356,22 +232,6 @@ class Madry():
             'scheduler_state_dict': self.scheduler.state_dict(),
         }, os.path.join(save_path, 'epoch_'+str(epoch)+'.pth'))
 
-        if self.save_eps:
-            self._save('eps', epoch)
-
-        if self.save_loss:
-            self._save('loss', epoch)
-
-        if self.save_fosc:
-            self._save('fosc', epoch)
-        
-        if self.save_minus_delta:
-            self._save('minus_delta_loss', epoch)
-            self._save('minus_delta_correct', epoch)
-        
-        if self.save_correct:
-            self._save('correct', epoch)
-
 
 def get_args():
     parser = argparse.ArgumentParser(description='CIFAR10 Madry Adversarial Training', add_help=True)
@@ -406,14 +266,6 @@ def main():
         subfolder += '_val'
     if args.clean_coeff > 0:
         subfolder += '_clean_coeff_%.1f' % args.clean_coeff
-    if args.increase_steps:
-        subfolder += '_[%s]@[%s]' % (','.join(str(e) for e in args.more_steps), ','.join(str(e) for e in args.steps_intervals))
-    if args.increase_eps:
-        subfolder += '_increase_eps'
-    if args.linear_eps:
-        subfolder += '_linear_eps'
-    if args.input_diversity:
-        subfolder += '_id_prob_%.1f' % args.id_prob
     if args.cutout:
         subfolder += '_cutout_%d_%d' % (args.cutout_n_holes, args.cutout_length)
     if args.amp:
