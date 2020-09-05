@@ -41,7 +41,7 @@ class SmoothGrad(object):
         one_hot_mask = torch.zeros((1, logits.shape[-1])).cuda()
         one_hot_mask.scatter_(1, idx.unsqueeze(1), 1)
         one_hot_mask = one_hot_mask.repeat(len(x_noisy),1)
-        grad = torch.autograd.grad(logits, [x_noisy], one_hot_mask)[0].cpu()
+        grad = torch.autograd.grad(logits, [x_noisy], one_hot_mask)[0]
         avg_gradients = torch.mean(grad, dim=0, keepdim=True)
         model.train(mode)
 

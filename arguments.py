@@ -237,3 +237,22 @@ def explore_args(parser):
                        help='confidence for cw loss function')
     group.add_argument('--random-start', default=1, type=int, 
                        help='number of random starts for PGD')
+
+
+# SALIENCY MAP WITH SMOOTH GRAD
+def saliency_map_args(parser):
+    group = parser.add_argument_group('Smooth Grad', 'Arguments for generation of saliency maps')
+    group.add_argument('--eps', default=8, type=int)
+    group.add_argument('--alpha', default=2, type=int)
+    group.add_argument('--steps', default=20, type=int)
+    group.add_argument('--loss-fn', default='xent', type=str, choices=['xent', 'cw'],
+                       help='which loss function to use')
+    group.add_argument('--cw-conf', default=50., type=float,
+                       help='confidence for cw loss function')
+    group.add_argument('--random-start', default=1, type=int, 
+                       help='number of random starts for PGD')
+    group.add_argument('--adversarial', action='store_true')
+    group.add_argument('--stdev-spread', default=0.1)
+    group.add_argument('--n-samples', default=50)
+    group.add_argument('--magnitude', action='store_true')
+    group.add_argument('--absolute', action='store_true')
