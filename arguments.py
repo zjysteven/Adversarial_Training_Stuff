@@ -16,7 +16,7 @@ def model_args(parser):
 # DATALOADING OPTS
 def data_args(parser):
     group = parser.add_argument_group('Data', 'Arguments control Data and loading for training')
-    group.add_argument('--dataset', type=str, choices=['cifar10', 'tinyimagenet', 'stl10'],
+    group.add_argument('--dataset', default='cifar10', type=str, choices=['cifar10', 'tinyimagenet', 'stl10'],
                        help='Which dataset is used')
     group.add_argument('--data-dir', type=str, default='./data',
                        help='Dataset directory')
