@@ -37,6 +37,20 @@ def main():
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
     assert torch.cuda.is_available()
 
+    temp = args.model_file.split('/')
+    ind = temp.index('checkpoints')
+    arch = args.model_file.split('/')[ind+2]
+    if 'wrn' in arch:
+        args.arch = 'wrn'
+        args.depth = int(arch.split('_')[0][3:])
+        args.width = int(arch.split('_')[1])
+    elif 'resnet' in arch:
+        args.arch = 'resnet'
+        args.depth = int(arch[6:])
+    elif 'pre_resnet' in arch:
+        args.arch = 'pre_resent'
+        args.depth = int(arch[10:])
+
     # load model
     model = utils.setup(args, train=False, model_file=args.model_file)
 
